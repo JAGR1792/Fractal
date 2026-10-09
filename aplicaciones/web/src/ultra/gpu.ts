@@ -48,6 +48,11 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
   const adapter: any = await nav.gpu.requestAdapter()
   if (!adapter) throw new Error('sin adapter WebGPU')
   const device: any = await adapter.requestDevice()
+  device.addEventListener?.('uncapturederror', (e: any) => {
+    console.error('[fractal/ultra] WebGPU error:', e?.error ?? e)
+    const aviso = document.getElementById('aviso')
+    if (aviso) aviso.textContent = `ULTRA error: ${String(e?.error?.message ?? e?.message ?? e)}`
+  })
   const contexto: any = (lienzo as any).getContext('webgpu')
   if (!contexto) throw new Error('sin contexto webgpu')
   const formato: string = nav.gpu.getPreferredCanvasFormat()
@@ -68,10 +73,10 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
 
   // Geometría esfera
   const esfera = esferaUnitaria()
-  const bufVert: any = device.createBuffer({ size: esfera.posiciones.byteLength, usage: 0x2 | 0x8, mappedAtCreation: true })
+  const bufVert: any = device.createBuffer({ size: esfera.posiciones.byteLength, usage: 0x20 | 0x8, mappedAtCreation: true })
   new Float32Array(bufVert.getMappedRange()).set(esfera.posiciones)
   bufVert.unmap()
-  const bufNor: any = device.createBuffer({ size: esfera.normales.byteLength, usage: 0x2 | 0x8, mappedAtCreation: true })
+  const bufNor: any = device.createBuffer({ size: esfera.normales.byteLength, usage: 0x20 | 0x8, mappedAtCreation: true })
   new Float32Array(bufNor.getMappedRange()).set(esfera.normales)
   bufNor.unmap()
   const bufIdx: any = device.createBuffer({ size: esfera.indices.byteLength, usage: 0x10 | 0x8, mappedAtCreation: true })
@@ -94,8 +99,8 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
   new Float32Array(bufDatos.getMappedRange()).set(datos)
   bufDatos.unmap()
 
-  // Uniformes viewProj + luz
-  const bufUni: any = device.createBuffer({ size: 80, usage: 0x40 | 0x8 })
+  // Uniformes: viewProj(64) + luzDir(12+4pad) + tiempo(4) + brillo(4) + pad = 96 bytes
+  const bufUni: any = device.createBuffer({ size: 96, usage: 0x40 | 0x8 })
   const modPlaneta: any = device.createShaderModule({ code: planetaWGSL })
   const modOrbita: any = device.createShaderModule({ code: orbitaWGSL })
   const pipePlaneta: any = device.createRenderPipeline({
@@ -105,7 +110,7 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
       { arrayStride: 12, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x3' }] },
     ]},
     fragment: { module: modPlaneta, entryPoint: 'fs', targets: [{ format: formato }] },
-    primitive: { topology: 'triangle-list', cullMode: 'back' },
+    primitive: { topology: 'triangle-list', cullMode: 'none' },
     depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
   })
 
@@ -125,7 +130,7 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
     }
   })
   const arrOrbita = new Float32Array(vertsOrbita)
-  const bufOrbita: any = device.createBuffer({ size: Math.max(arrOrbita.byteLength, 4), usage: 0x2 | 0x8, mappedAtCreation: true })
+  const bufOrbita: any = device.createBuffer({ size: Math.max(arrOrbita.byteLength, 4), usage: 0x20 | 0x8, mappedAtCreation: true })
   new Float32Array(bufOrbita.getMappedRange()).set(arrOrbita.length ? arrOrbita : new Float32Array([0]))
   bufOrbita.unmap()
   const pipeOrbita: any = device.createRenderPipeline({
@@ -139,7 +144,8 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
     primitive: { topology: 'line-list' },
     depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth24plus' },
   })
-  const bufProf: any = device.createTexture({ size: [lienzo.width || 800, lienzo.height || 600], sampleCount: 1, format: 'depth24plus', usage: 0x10 }).createView()
+  let texProf: any = device.createTexture({ size: [lienzo.width || 800, lienzo.height || 600], sampleCount: 1, format: 'depth24plus', usage: 0x10 })
+  let vistaProf: any = texProf.createView()
 
   const grupoPlaneta: any = device.createBindGroup({ layout: pipePlaneta.getBindGroupLayout(0), entries: [
     { binding: 0, resource: { buffer: bufUni } },
@@ -161,6 +167,9 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
     const h = lienzo.clientHeight || 600
     if (lienzo.width !== w || lienzo.height !== h) {
       lienzo.width = w; lienzo.height = h
+      texProf.destroy?.()
+      texProf = device.createTexture({ size: [w, h], sampleCount: 1, format: 'depth24plus', usage: 0x10 })
+      vistaProf = texProf.createView()
       necesitaVista = true
     }
     if (!pausado) angulo += 0.002 * velocidad
@@ -179,16 +188,18 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
     const vista = matrizVista(cam)
     const proj = matrizProyeccion(w / h)
     const vp = multiplicar(proj, vista)
-    const uni = new Float32Array(20)
+    const uni = new Float32Array(24)
     uni.set(vp, 0)
-    uni.set([0.6, 0.8, 1.0, 0], 16)
-    uni[19] = seleccionado ? 1.2 : 1.0
+    uni.set([0.6, 0.8, 1.0], 16)
+    uni[19] = 0 // padding
+    uni[20] = 0 // tiempo
+    uni[21] = seleccionado ? 1.2 : 1.0 // brillo
     device.queue.writeBuffer(bufUni, 0, uni)
 
     const cod: any = device.createCommandEncoder()
     const paso: any = cod.beginRenderPass({
       colorAttachments: [{ view: contexto.getCurrentTexture().createView(), loadOp: 'clear', clearValue: { r: 0.02, g: 0.02, b: 0.08, a: 1 }, storeOp: 'store' }],
-      depthStencilAttachment: { view: bufProf, depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' },
+      depthStencilAttachment: { view: vistaProf, depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' },
     })
     paso.setPipeline(pipeOrbita)
     paso.setBindGroup(0, grupoOrbita)

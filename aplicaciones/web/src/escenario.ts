@@ -35,17 +35,24 @@ export interface CuerpoVisual extends CuerpoEscenario {
   color: [number, number, number]
 }
 
-const COLORES: Array<[number, number, number]> = [
-  [1.0, 0.85, 0.2], // sol
-  [0.7, 0.7, 0.72], // mercurio
-  [0.95, 0.75, 0.4], // venus
-  [0.2, 0.45, 0.95], // tierra
-  [0.9, 0.35, 0.2], // marte
-  [0.9, 0.7, 0.5], // jupiter
-  [0.9, 0.82, 0.6], // saturno
-  [0.5, 0.85, 0.9], // urano
-  [0.25, 0.4, 0.95], // neptuno
-  [0.8, 0.8, 0.85], // luna/otros
+const COLORES_POR_ID: Record<string, [number, number, number]> = {
+  sol: [1.0, 0.85, 0.2],
+  mercurio: [0.7, 0.7, 0.72],
+  venus: [0.95, 0.75, 0.4],
+  tierra: [0.2, 0.45, 0.95],
+  luna: [0.8, 0.8, 0.85],
+  marte: [0.9, 0.35, 0.2],
+  jupiter: [0.9, 0.7, 0.5],
+  saturno: [0.9, 0.82, 0.6],
+  urano: [0.5, 0.85, 0.9],
+  neptuno: [0.25, 0.4, 0.95],
+}
+
+const COLORES_FALLBACK: Array<[number, number, number]> = [
+  [0.7, 0.7, 0.72],
+  [0.95, 0.75, 0.4],
+  [0.9, 0.35, 0.2],
+  [0.5, 0.85, 0.9],
 ]
 
 /**
@@ -57,10 +64,11 @@ export function aVisual(escenario: Escenario, exageracion = 800): CuerpoVisual[]
   return escenario.cuerpos.map((c, i) => {
     // Escala logarítmica: comprime 1e6..1e9 m en 0.6..6.0 mundo, preserva orden.
     const radioVisual = 0.6 + Math.log10(Math.max(c.radio, 1)) * 0.5
+    const color = COLORES_POR_ID[c.id.toLowerCase()] ?? COLORES_FALLBACK[i % COLORES_FALLBACK.length]
     return {
       ...c,
       radioVisual: Math.min(Math.max(radioVisual, 0.6), 6.0),
-      color: COLORES[i % COLORES.length],
+      color,
     }
   })
 }

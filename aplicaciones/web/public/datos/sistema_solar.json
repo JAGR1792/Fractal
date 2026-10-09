@@ -1,0 +1,89 @@
+{
+  "id": "sistema_solar",
+  "nombre": "Sistema Solar",
+  "descripcion": "Sol y los 8 planetas con elementos orbitales aproximados de la epoca J2000",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "sol",
+      "nombre": "Sol",
+      "masa": 1.989e30,
+      "radio": 6.957e8,
+      "posicion": [0.0, 0.0, 0.0],
+      "velocidad": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "mercurio",
+      "nombre": "Mercurio",
+      "masa": 3.285e23,
+      "radio": 2.4397e6,
+      "posicion": [5.79e10, 0.0, 0.0],
+      "velocidad": [0.0, 47360.0, 0.0]
+    },
+    {
+      "id": "venus",
+      "nombre": "Venus",
+      "masa": 4.867e24,
+      "radio": 6.0518e6,
+      "posicion": [1.082e11, 0.0, 0.0],
+      "velocidad": [0.0, 35020.0, 0.0]
+    },
+    {
+      "id": "tierra",
+      "nombre": "Tierra",
+      "masa": 5.972e24,
+      "radio": 6.371e6,
+      "posicion": [1.496e11, 0.0, 0.0],
+      "velocidad": [0.0, 29780.0, 0.0]
+    },
+    {
+      "id": "marte",
+      "nombre": "Marte",
+      "masa": 6.39e23,
+      "radio": 3.3895e6,
+      "posicion": [2.279e11, 0.0, 0.0],
+      "velocidad": [0.0, 24130.0, 0.0]
+    },
+    {
+      "id": "jupiter",
+      "nombre": "Jupiter",
+      "masa": 1.898e27,
+      "radio": 6.9911e7,
+      "posicion": [7.785e11, 0.0, 0.0],
+      "velocidad": [0.0, 13070.0, 0.0]
+    },
+    {
+      "id": "saturno",
+      "nombre": "Saturno",
+      "masa": 5.683e26,
+      "radio": 5.8232e7,
+      "posicion": [1.434e12, 0.0, 0.0],
+      "velocidad": [0.0, 9690.0, 0.0]
+    },
+    {
+      "id": "urano",
+      "nombre": "Urano",
+      "masa": 8.681e25,
+      "radio": 2.5362e7,
+      "posicion": [2.871e12, 0.0, 0.0],
+      "velocidad": [0.0, 6810.0, 0.0]
+    },
+    {
+      "id": "neptuno",
+      "nombre": "Neptuno",
+      "masa": 1.024e26,
+      "radio": 2.4622e7,
+      "posicion": [4.495e12, 0.0, 0.0],
+      "velocidad": [0.0, 5430.0, 0.0]
+    }
+  ],
+  "parametros": {
+    "dt": 3600.0,
+    "pasos": 87600,
+    "nota": "1 paso por hora, 10 anos simulados. Las velocidades son aproximaciones circulares."
+  }
+}

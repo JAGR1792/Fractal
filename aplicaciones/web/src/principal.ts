@@ -47,7 +47,10 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  arrancar().catch((e) => {
+  const params = new URLSearchParams(window.location.search)
+  const pedido = params.get('perfil')
+  const forzar = pedido === 'ultra' || pedido === 'lite' ? pedido : undefined
+  arrancar(forzar).catch((e) => {
     console.error('[fractal] fallo arranque:', e)
     const aviso = document.getElementById('aviso')
     if (aviso) aviso.textContent = 'No se pudo iniciar 3D. Usa la tabla de datos como alternativa.'

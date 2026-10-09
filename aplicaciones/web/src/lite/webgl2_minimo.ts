@@ -1,6 +1,6 @@
 /**
- * LITE: WebGL2 mínimo con esferas + órbitas + picking por rayo-esfera.
- * Sin motores. Suficiente para PC escolar y móvil.
+ * LITE: WebGL2 mínimo con esferas + órbitas.
+ * Sin motores. Un draw por cuerpo (N pequeño en LITE).
  */
 
 import { aVisual, cargarEscenario, normalizarPosiciones } from '../escenario'
@@ -9,12 +9,12 @@ import { camaraInicial, conectarControles, matrizProyeccion, matrizVista, multip
 const VS = `#version 300 es
 layout(location=0) in vec3 p;
 layout(location=1) in vec3 n;
-layout(location=2) in vec3 centro;
-layout(location=3) in float radio;
-layout(location=4) in vec3 color;
 uniform mat4 uVP;
+uniform vec3 uCentro;
+uniform float uRadio;
 out vec3 vN; out vec3 vC;
-void main(){ vec3 mundo = p*radio+centro; vN=n; vC=color; gl_Position=uVP*vec4(mundo,1.0); }`
+uniform vec3 uColor;
+void main(){ vec3 mundo = p*uRadio+uCentro; vN=n; vC=uColor; gl_Position=uVP*vec4(mundo,1.0); }`
 
 const FS = `#version 300 es
 precision mediump float;
@@ -47,7 +47,7 @@ function programa(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProg
   return p
 }
 
-function esferaCPU(lat = 16, lon = 12): { pos: Float32Array; nor: Float32Array; idx: Uint16Array } {
+function esferaCPU(lat = 20, lon = 14): { pos: Float32Array; nor: Float32Array; idx: Uint16Array } {
   const pos: number[] = []
   const nor: number[] = []
   const idx: number[] = []
@@ -82,21 +82,41 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
   const glRaw = lienzo.getContext('webgl2')
   if (!glRaw) throw new Error('sin WebGL2')
   const gl: WebGL2RenderingContext = glRaw
-  const cam: EstadoCamara = camaraInicial(70)
+  const cam: EstadoCamara = camaraInicial(60)
   const desconectar = conectarControles(lienzo, cam, () => undefined)
 
   const prog = programa(gl, VS, FS)
   const progOrb = programa(gl, VS_ORB, FS_ORB)
+  const locVP = gl.getUniformLocation(prog, 'uVP')
+  const locCentro = gl.getUniformLocation(prog, 'uCentro')
+  const locRadio = gl.getUniformLocation(prog, 'uRadio')
+  const locColor = gl.getUniformLocation(prog, 'uColor')
+  const locVPOrb = gl.getUniformLocation(progOrb, 'uVP')
+  const locColorOrb = gl.getUniformLocation(progOrb, 'uColor')
+
   const esf = esferaCPU()
-  const bufPos = gl.createBuffer()
+  const bufPos = gl.createBuffer()!
   gl.bindBuffer(gl.ARRAY_BUFFER, bufPos)
   gl.bufferData(gl.ARRAY_BUFFER, esf.pos, gl.STATIC_DRAW)
-  const bufNor = gl.createBuffer()
+  const bufNor = gl.createBuffer()!
   gl.bindBuffer(gl.ARRAY_BUFFER, bufNor)
   gl.bufferData(gl.ARRAY_BUFFER, esf.nor, gl.STATIC_DRAW)
-  const bufIdx = gl.createBuffer()
+  const bufIdx = gl.createBuffer()!
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufIdx)
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, esf.idx, gl.STATIC_DRAW)
+  const vaoEsfera = gl.createVertexArray()!
+  gl.bindVertexArray(vaoEsfera)
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufPos)
+  gl.enableVertexAttribArray(0)
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0)
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufNor)
+  gl.enableVertexAttribArray(1)
+  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0)
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufIdx)
+  gl.bindVertexArray(null)
+
+  const vaoOrb = gl.createVertexArray()!
+  const bufOrb = gl.createBuffer()!
 
   let visuales = aVisual({
     id: 'demo', nombre: 'Demo', descripcion: '', cuerpos: [
@@ -123,59 +143,45 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
     if (lienzo.width !== w || lienzo.height !== h) {
       lienzo.width = w
       lienzo.height = h
-      gl.viewport(0, 0, w, h)
     }
-    if (!pausado) angulo += 0.003 * velocidad
-    gl.clearColor(0.02, 0.02, 0.08, 1)
+    gl.viewport(0, 0, lienzo.width, lienzo.height)
+    if (!pausado) angulo += 0.004 * velocidad
+    gl.clearColor(0.03, 0.03, 0.1, 1)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     gl.enable(gl.DEPTH_TEST)
 
     const vp = multiplicar(matrizProyeccion(w / h), matrizVista(cam))
-    gl.useProgram(prog)
-    gl.uniformMatrix4fv(gl.getUniformLocation(prog, 'uVP'), false, vp)
-    gl.bindBuffer(gl.ARRAY_BUFFER, bufPos)
-    gl.enableVertexAttribArray(0)
-    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0)
-    gl.bindBuffer(gl.ARRAY_BUFFER, bufNor)
-    gl.enableVertexAttribArray(1)
-    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0)
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufIdx)
 
+    // Planetas: un draw por cuerpo
+    gl.useProgram(prog)
+    gl.uniformMatrix4fv(locVP, false, vp)
+    gl.bindVertexArray(vaoEsfera)
     visuales.forEach((c, i) => {
       const p0 = posMundo.get(c.id) ?? [10, 0, 0]
       let x = p0[0]
       let z = p0[2]
       if (i > 0) {
-        const r = Math.hypot(p0[0], p0[2])
-        const a = angulo * (10 / Math.max(r, 1))
+        const r = Math.max(Math.hypot(p0[0], p0[2]), 1)
+        const a = angulo * (12 / r)
         x = Math.cos(a) * r
         z = Math.sin(a) * r
       }
-      const centro = new Float32Array([x, p0[1], z])
-      const color = new Float32Array(c.color)
-      const c0 = gl.createBuffer()
-      gl.bindBuffer(gl.ARRAY_BUFFER, c0)
-      gl.bufferData(gl.ARRAY_BUFFER, centro, gl.STATIC_DRAW)
-      gl.enableVertexAttribArray(2)
-      gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 0, 0)
-      gl.vertexAttribDivisor(2, 0)
-      gl.vertexAttrib3f(2, centro[0], centro[1], centro[2])
-      const locR = gl.getUniformLocation(prog, 'uRadio')
-      void locR
-      // radio y color vía uniforms por draw (simple, N pequeño en LITE)
-      void color
-      gl.drawElementsInstanced(gl.TRIANGLES, esf.idx.length, gl.UNSIGNED_SHORT, 0, 1)
-      gl.deleteBuffer(c0)
+      gl.uniform3f(locCentro, x, p0[1], z)
+      gl.uniform1f(locRadio, c.radioVisual)
+      gl.uniform3f(locColor, c.color[0], c.color[1], c.color[2])
+      gl.drawElements(gl.TRIANGLES, esf.idx.length, gl.UNSIGNED_SHORT, 0)
     })
+    gl.bindVertexArray(null)
 
+    // Órbitas: círculos en XZ
     gl.useProgram(progOrb)
-    gl.uniformMatrix4fv(gl.getUniformLocation(progOrb, 'uVP'), false, vp)
-    gl.uniform3f(gl.getUniformLocation(progOrb, 'uColor'), 0.45, 0.5, 0.6)
-    // órbitas como círculos (line loop por cuerpo, N pequeño)
+    gl.uniformMatrix4fv(locVPOrb, false, vp)
+    gl.uniform3f(locColorOrb, 0.45, 0.5, 0.65)
+    gl.bindVertexArray(vaoOrb)
     visuales.forEach((c, i) => {
       if (i === 0) return
       const p0 = posMundo.get(c.id) ?? [10, 0, 0]
-      const r = Math.hypot(p0[0], p0[2])
+      const r = Math.max(Math.hypot(p0[0], p0[2]), 1)
       const pts = new Float32Array(129 * 3)
       for (let s = 0; s <= 128; s++) {
         const a = (s / 128) * Math.PI * 2
@@ -183,14 +189,13 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
         pts[s * 3 + 1] = 0
         pts[s * 3 + 2] = Math.sin(a) * r
       }
-      const b = gl.createBuffer()
-      gl.bindBuffer(gl.ARRAY_BUFFER, b)
-      gl.bufferData(gl.ARRAY_BUFFER, pts, gl.STATIC_DRAW)
+      gl.bindBuffer(gl.ARRAY_BUFFER, bufOrb)
+      gl.bufferData(gl.ARRAY_BUFFER, pts, gl.DYNAMIC_DRAW)
       gl.enableVertexAttribArray(0)
       gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0)
       gl.drawArrays(gl.LINE_STRIP, 0, 129)
-      gl.deleteBuffer(b)
     })
+    gl.bindVertexArray(null)
   }
   requestAnimationFrame(cuadro)
 
