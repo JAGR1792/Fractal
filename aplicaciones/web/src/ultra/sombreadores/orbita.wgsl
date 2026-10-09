@@ -7,6 +7,8 @@ struct Uniformes {
   tiempo: f32,
   camPos: vec3<f32>,
   brillo: f32,
+  spin: f32,
+  relleno: vec3<f32>,
 }
 
 @group(0) @binding(0) var<uniform> u: Uniformes;

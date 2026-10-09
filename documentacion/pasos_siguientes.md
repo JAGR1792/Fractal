@@ -24,8 +24,8 @@ Mapa vivo del proyecto: dónde vamos y qué falta. Actualizar en cada etapa.
 ## Etapa 3 — resto
 
 1. Verificación en CI (bloqueo local: sin DNS a `crates.io`, caché vacía).
-2. Endpoint binario `Float32Array` según `binario.ts` (`[t, x,y,z,vx,vy,vz × N]`), sin romper el JSON.
-3. Cliente del API en el frontend: `POST` simulación, paginación de `estados`, `writeBuffer` al GPU (hoy `gpu.ts` es demo local).
+2. Endpoint binario `Float32Array` según `binario.ts` (`[t, x,y,z,vx,vy,vz × N]`), sin romper el JSON. Hecho en `agent/alya/etapa3-binario`: `GET /:id/binario` + `binario::codificar` + test.
+3. Cliente del API en el frontend: `POST` simulación, paginación de `estados`, `writeBuffer` al GPU (hoy `gpu.ts` es demo local). Hecho en `agent/alya/etapa3-binario`: `api.ts` (`probarFuente` con fallback), `traerBinario`/`partirBloques` y `montarUltra` animando fotogramas interpolados del servidor. LITE sigue demo (pendiente).
 4. Constructor de escenarios en Vue + compartir por URL o id del servidor.
 5. Persistencia y anti-abuso (hoy jobs en memoria, `MAX_CUERPOS=128`, `MAX_PASOS=200_000`).
 

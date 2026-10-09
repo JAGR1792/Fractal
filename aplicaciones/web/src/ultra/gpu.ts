@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { camaraInicial, conectarControles, matrizProyeccion, matrizVista, multiplicar, ojoDeCamara, type EstadoCamara } from '../camara'
+import { camaraInicial, conectarControles, invertir, matrizProyeccion, matrizVista, multiplicar, ojoDeCamara, rayoDesdePantalla, tocaEsfera, type EstadoCamara } from '../camara'
 import { aVisual, cargarEscenario, normalizarPosiciones, tipoPlaneta, urlTextura, type CuerpoVisual } from '../escenario'
+import type { FuenteEstados } from '../api'
 import planetaWGSL from './sombreadores/planeta.wgsl?raw'
 import orbitaWGSL from './sombreadores/orbita.wgsl?raw'
 
@@ -16,6 +17,8 @@ export interface ControlUltra {
   alternarPausa: () => void
   fijarVelocidad: (v: number) => void
   seleccionar: (id: string | null) => void
+  /** Cambia la fuente de fotogramas en vivo (`null` = demo local). */
+  fijarFuente: (f: FuenteEstados | null) => void
   destruir: () => void
   leerSeleccion: () => string | null
 }
@@ -105,7 +108,11 @@ async function cargarTextura(device: any, url: string, colorFondo: [number, numb
   }
 }
 
-export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos_cuerpos.json'): Promise<ControlUltra> {
+export async function montarUltra(
+  lienzo: HTMLCanvasElement,
+  urlEscenario = '/datos/dos_cuerpos.json',
+  fuente: FuenteEstados | null = null,
+): Promise<ControlUltra> {
   const nav: any = navigator as any
   if (!nav.gpu) throw new Error('sin WebGPU')
   const adapter: any = await nav.gpu.requestAdapter()
@@ -177,8 +184,8 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
   new Float32Array(bufDatos.getMappedRange()).set(datos)
   bufDatos.unmap()
 
-  // Uniformes: viewProj(64) + luzDir(12)+tiempo(4) + camPos(12)+brillo(4) = 96 bytes
-  const bufUni: any = device.createBuffer({ size: 96, usage: 0x40 | 0x8 })
+  // Uniformes: viewProj(64) + luzDir(12)+tiempo(4) + camPos(12)+brillo(4) + spin(4)+pad → 128 por alineación
+  const bufUni: any = device.createBuffer({ size: 128, usage: 0x40 | 0x8 })
   const modPlaneta: any = device.createShaderModule({ code: planetaWGSL })
   const modOrbita: any = device.createShaderModule({ code: orbitaWGSL })
   const pipePlaneta: any = device.createRenderPipeline({
@@ -244,10 +251,97 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
   let cuadros = 0
   const tituloBase = document.title
   const t0 = performance.now()
+  let ultimoMs = t0
+  let tiempoFuente = 0
+  // Segundos SIMULADOS para la rotación propia (ver periodoRotacion en WGSL).
+  let spinSim = 0
+  let ultimosCentros: Float32Array = centros
+  const radios = visuales.map((c) => c.radioVisual * 1.2)
+
+  /** Cuerpo bajo el cursor (rayo-esfera sobre los últimos centros). */
+  function cuerpoBajoCursor(e: MouseEvent): string | null {
+    const rect = lienzo.getBoundingClientRect()
+    const w = lienzo.clientWidth || 800
+    const h = lienzo.clientHeight || 600
+    const inv = invertir(multiplicar(matrizProyeccion(w / h), matrizVista(cam)))
+    const rayo = rayoDesdePantalla(e.clientX - rect.left, e.clientY - rect.top, w, h, inv)
+    let mejor: string | null = null
+    let mejorT = Infinity
+    visuales.forEach((v, i) => {
+      const centro: [number, number, number] = [ultimosCentros[i * 4], ultimosCentros[i * 4 + 1], ultimosCentros[i * 4 + 2]]
+      const t = tocaEsfera(rayo, centro, radios[i] ?? 1)
+      if (t !== null && t < mejorT) {
+        mejorT = t
+        mejor = v.id
+      }
+    })
+    return mejor
+  }
+
+  function avisarSeleccion(id: string | null): void {
+    seleccionado = id
+    window.dispatchEvent(new CustomEvent('fractal-seleccion', { detail: { id } }))
+  }
+
+  // Clic = seleccionar (si no fue arrastre); doble clic = centrar cámara.
+  let downX = 0
+  let downY = 0
+  const alDown = (e: PointerEvent): void => {
+    downX = e.clientX
+    downY = e.clientY
+  }
+  const alClick = (e: MouseEvent): void => {
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return
+    avisarSeleccion(cuerpoBajoCursor(e))
+  }
+  const alDoble = (e: MouseEvent): void => {
+    const id = cuerpoBajoCursor(e)
+    if (id === null) return
+    const i = visuales.findIndex((v) => v.id === id)
+    if (i < 0) return
+    cam.objetivo = [ultimosCentros[i * 4], ultimosCentros[i * 4 + 1], ultimosCentros[i * 4 + 2]]
+    avisarSeleccion(id)
+  }
+  lienzo.addEventListener('pointerdown', alDown)
+  lienzo.addEventListener('click', alClick)
+  lienzo.addEventListener('dblclick', alDoble)
+
+  // Servidor: interpola entre fotogramas binarios si hay historial válido.
+  let bloques: Float32Array[] | null = fuente && fuente.bloques.length >= 2 ? fuente.bloques : null
+  let escalaFuente = fuente?.escala ?? 1
+
+  function rangoFuente(): { ini: number; fin: number } {
+    if (!bloques || bloques.length < 2) return { ini: 0, fin: 0 }
+    return { ini: bloques[0][0], fin: bloques[bloques.length - 1][0] }
+  }
+
+  /** Escribe en `c` los centros interpolados del instante `t` (segundos sim). */
+  function centrosServidor(c: Float32Array, t: number): void {
+    if (!bloques) return
+    let k = 0
+    while (k + 1 < bloques.length - 1 && bloques[k + 1][0] <= t) k++
+    const a = bloques[k]
+    const b = bloques[Math.min(k + 1, bloques.length - 1)]
+    const tramo = b[0] - a[0]
+    const alpha = tramo > 0 ? Math.min(Math.max((t - a[0]) / tramo, 0), 1) : 0
+    visuales.forEach((_v, i) => {
+      const base = 1 + i * 6
+      const x = a[base] + (b[base] - a[base]) * alpha
+      const y = a[base + 1] + (b[base + 1] - a[base + 1]) * alpha
+      const z = a[base + 2] + (b[base + 2] - a[base + 2]) * alpha
+      // Misma convención que normalizarPosiciones: [x, z, y] × escala.
+      c[i * 4] = x * escalaFuente
+      c[i * 4 + 1] = z * escalaFuente
+      c[i * 4 + 2] = y * escalaFuente
+    })
+  }
 
   function cuadro(): void {
     if (!vivo) return
     requestAnimationFrame(cuadro)
+    const ahora = performance.now()
+    const dtMs = Math.min(ahora - ultimoMs, 100)
+    ultimoMs = ahora
     const w = lienzo.clientWidth || 800
     const h = lienzo.clientHeight || 600
     if (lienzo.width !== w || lienzo.height !== h) {
@@ -258,28 +352,43 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
       necesitaVista = true
     }
     if (!pausado) angulo += 0.002 * velocidad
-    // Rotación simple de cuerpos no centrales (demo sin servidor aún)
     const c = new Float32Array(centros)
-    visuales.forEach((v, i) => {
-      if (i === 0) return
-      const p0 = posMundo.get(v.id) ?? [10, 0, 0]
-      const r = Math.hypot(p0[0], p0[2])
-      const a = angulo * (10 / r)
-      c[i * 4] = Math.cos(a) * r
-      c[i * 4 + 2] = Math.sin(a) * r
-    })
+    const { ini: tIni, fin: tFin } = rangoFuente()
+    const hayServidor = bloques !== null && tFin > tIni
+    if (hayServidor) {
+      // Física real del servidor: una vuelta completa cada ~20 s a 1x.
+      if (!pausado) tiempoFuente += (dtMs / 1000) * velocidad * ((tFin - tIni) / 20)
+      const t = tIni + ((tiempoFuente % (tFin - tIni)) + (tFin - tIni)) % (tFin - tIni)
+      spinSim = t
+      centrosServidor(c, t)
+    } else {
+      // Demo local sin servidor: 1440 s sim por segundo real (la tierra
+      // completa su día en ~60 s a 1x); órbitas circulares simples.
+      if (!pausado) spinSim += (dtMs / 1000) * velocidad * 1440
+      // Demo local sin servidor: rotación simple de cuerpos no centrales.
+      visuales.forEach((v, i) => {
+        if (i === 0) return
+        const p0 = posMundo.get(v.id) ?? [10, 0, 0]
+        const r = Math.hypot(p0[0], p0[2])
+        const a = angulo * (10 / r)
+        c[i * 4] = Math.cos(a) * r
+        c[i * 4 + 2] = Math.sin(a) * r
+      })
+    }
     device.queue.writeBuffer(bufCentros, 0, c)
+    ultimosCentros = c
 
     const vista = matrizVista(cam)
     const proj = matrizProyeccion(w / h)
     const vp = multiplicar(proj, vista)
     const ojo = ojoDeCamara(cam)
-    const uni = new Float32Array(24)
+    const uni = new Float32Array(32)
     uni.set(vp, 0)
     uni.set([0.6, 0.8, 1.0], 16)
     uni[19] = (performance.now() - t0) / 1000 // tiempo (nubes, pulso sol)
     uni.set(ojo, 20) // camPos
     uni[23] = seleccionado ? 1.2 : 1.0 // brillo
+    uni[24] = spinSim // rotación propia en segundos sim (respeta pausa)
     device.queue.writeBuffer(bufUni, 0, uni)
 
     const cod: any = device.createCommandEncoder()
@@ -314,7 +423,18 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
     alternarPausa: () => { pausado = !pausado },
     fijarVelocidad: (v: number) => { velocidad = v },
     seleccionar: (id: string | null) => { seleccionado = id },
+    fijarFuente: (f: FuenteEstados | null) => {
+      bloques = f && f.bloques.length >= 2 ? f.bloques : null
+      escalaFuente = f?.escala ?? 1
+      tiempoFuente = 0
+    },
     leerSeleccion: () => seleccionado,
-    destruir: () => { vivo = false; desconectar() },
+    destruir: () => {
+      vivo = false
+      desconectar()
+      lienzo.removeEventListener('pointerdown', alDown)
+      lienzo.removeEventListener('click', alClick)
+      lienzo.removeEventListener('dblclick', alDoble)
+    },
   }
 }

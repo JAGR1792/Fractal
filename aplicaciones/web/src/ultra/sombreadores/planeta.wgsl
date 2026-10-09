@@ -11,6 +11,8 @@ struct Uniformes {
   tiempo: f32,
   camPos: vec3<f32>,
   brillo: f32,
+  spin: f32,
+  relleno: vec3<f32>,
 }
 
 @group(0) @binding(0) var<uniform> u: Uniformes;
@@ -38,15 +40,39 @@ fn vs(
 ) -> Salida {
   let c = centros[inst];
   let d = datos[inst];
-  let mundo = vec3<f32>(vertice * d.x + c.xyz);
+  // Rotación propia atada al TIEMPO SIMULADO (u.spin en segundos):
+  // la luna está acoplada por marea: gira una vez por órbita.
+  let giro = u.spin * 6.2831853 / periodoRotacion(c.w);
+  let mundo = vec3<f32>(rotY(vertice, giro) * d.x + c.xyz);
   var s: Salida;
   s.pos = u.viewProj * vec4<f32>(mundo, 1.0);
-  s.normal = normal;
+  s.normal = rotY(normal, giro);
   s.color = d.yzw;
   s.vista = mundo;
   s.tipo = c.w;
   s.uv = uv;
   return s;
+}
+
+/// Rota un vector alrededor del eje Y (rotación propia de los cuerpos).
+fn rotY(p: vec3<f32>, a: f32) -> vec3<f32> {
+  let c = cos(a);
+  let s = sin(a);
+  return vec3<f32>(c * p.x + s * p.z, p.y, -s * p.x + c * p.z);
+}
+
+/// Período de rotación propia en segundos sim (la luna: 27.32 días, acoplada).
+fn periodoRotacion(tipo: f32) -> f32 {
+  if (tipo < 0.5) {
+    return 2160000.0;
+  }
+  if (tipo < 1.5) {
+    return 86164.0;
+  }
+  if (tipo < 2.5) {
+    return 2360448.0;
+  }
+  return 86400.0;
 }
 
 @fragment

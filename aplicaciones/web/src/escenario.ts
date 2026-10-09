@@ -102,14 +102,19 @@ export function aVisual(escenario: Escenario, exageracion = 800): CuerpoVisual[]
   })
 }
 
-/** Normaliza posiciones del escenario a mundo (-50..50) para la cámara inicial. */
-export function normalizarPosiciones(visuales: CuerpoVisual[]): Map<string, [number, number, number]> {
+/** Factor de escala mundo (40 / radio máximo) para normalizar posiciones SI. */
+export function escalaMundo(visuales: CuerpoVisual[]): number {
   let maxR = 1
   for (const c of visuales) {
     const r = Math.hypot(c.posicion[0], c.posicion[1], c.posicion[2])
     if (r > maxR) maxR = r
   }
-  const escala = 40 / maxR
+  return 40 / maxR
+}
+
+/** Normaliza posiciones del escenario a mundo (-50..50) para la cámara inicial. */
+export function normalizarPosiciones(visuales: CuerpoVisual[]): Map<string, [number, number, number]> {
+  const escala = escalaMundo(visuales)
   const mapa = new Map<string, [number, number, number]>()
   for (const c of visuales) {
     mapa.set(c.id, [c.posicion[0] * escala, c.posicion[2] * escala, c.posicion[1] * escala])

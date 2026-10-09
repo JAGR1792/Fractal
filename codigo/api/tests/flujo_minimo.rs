@@ -64,6 +64,17 @@ async fn crear_y_leer_simulacion() {
     estados.assert_status_ok();
     let pagina: Value = estados.json();
     assert_eq!(pagina["estados"].as_array().unwrap().len(), 3);
+
+    // Binario: 3 bloques × (1 + 2×6) f32 × 4 bytes, con cabeceras del protocolo.
+    let bin = servidor.get(&format!("/api/v1/simulaciones/{id}/binario?desde=0&limite=10")).await;
+    bin.assert_status_ok();
+    let cabeceras = bin.headers();
+    let texto = |nombre: &str| cabeceras[nombre].to_str().unwrap().to_string();
+    assert_eq!(texto("content-type"), "application/octet-stream");
+    assert_eq!(texto("x-fractal-version"), "1");
+    assert_eq!(texto("x-fractal-cuerpos"), "2");
+    assert_eq!(texto("x-fractal-bloques"), "3");
+    assert_eq!(texto("content-length"), (3 * (1 + 2 * 6) * 4).to_string());
 }
 
 #[tokio::test]

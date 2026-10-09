@@ -101,6 +101,19 @@ impl Almacen {
         desde: usize,
         limite: usize,
     ) -> Option<(EstadoSimulacion, Vec<Estado>)> {
+        self.rango(id, desde, limite).await.map(|(estado, _, bloques)| (estado, bloques))
+    }
+
+    /// Lee un rango con el conteo de cuerpos (para JSON y binario).
+    ///
+    /// El conteo sale de los parámetros originales para que el binario
+    /// tenga cabecera válida incluso si el cálculo aún no terminó.
+    pub async fn rango(
+        &self,
+        id: &Uuid,
+        desde: usize,
+        limite: usize,
+    ) -> Option<(EstadoSimulacion, usize, Vec<Estado>)> {
         self.interno.read().await.get(id).map(|registro| {
             let limite_sano = limite.clamp(1, 10_000);
             let fin = (desde + limite_sano).min(registro.historial.len());
@@ -109,7 +122,7 @@ impl Almacen {
             } else {
                 registro.historial[desde..fin].to_vec()
             };
-            (registro.estado, corte)
+            (registro.estado, registro.parametros.cuerpos.len(), corte)
         })
     }
 }
