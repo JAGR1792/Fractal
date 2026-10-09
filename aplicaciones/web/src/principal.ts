@@ -1,10 +1,11 @@
 import { elegirPerfil, type PerfilRender } from './detector'
-import { cargarEscenario, aVisual } from './escenario'
+import { cargarEscenario, aVisual, type CuerpoVisual, type Escenario } from './escenario'
 import { probarFuente, type FuenteEstados } from './api'
+import { montarSandbox, aplicarEdicion, type EdicionSandbox } from './sandbox'
 
 /**
  * Entrada web Fractal ULTRA/LITE.
- * Monta canvas 3D + barra de controles + tabla accesible (RF01, RF02, RF08).
+ * Monta canvas 3D + barra de controles + panel sandbox + tabla accesible.
  * Si el API responde, ULTRA anima física real del servidor; si no, demo local.
  */
 async function arrancar(forzar?: PerfilRender): Promise<void> {
@@ -14,19 +15,30 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   const lienzo = document.getElementById('escena') as HTMLCanvasElement | null
   if (!lienzo) throw new Error('falta <canvas id="escena">')
 
-  let control: { alternarPausa: () => void; fijarVelocidad: (v: number) => void; destruir?: () => void }
+  let control: {
+    alternarPausa: () => void
+    fijarVelocidad: (v: number) => void
+    fijarFuente?: (f: FuenteEstados | null) => void
+    destruir?: () => void
+  }
+
+  // Escenario local una sola vez (config + tabla + base del sandbox).
+  let esc: Escenario | null = null
+  let vis: CuerpoVisual[] = []
+  try {
+    esc = await cargarEscenario('/datos/dos_cuerpos.json')
+    vis = aVisual(esc)
+  } catch {
+    /* sin escenario: el render usa su demo interna */
+  }
+  const dt = esc?.parametros?.dt ?? 600
+  const pasos = esc?.parametros?.pasos ?? 3900
 
   // Fuente del servidor (solo ULTRA por ahora): no bloquea si el API cae.
   let fuente: FuenteEstados | null = null
-  if (perfil === 'ultra') {
-    try {
-      const esc = await cargarEscenario('/datos/dos_cuerpos.json')
-      const vis = aVisual(esc)
-      fuente = await probarFuente(vis, esc.parametros?.dt ?? 600, esc.parametros?.pasos ?? 3900)
-      if (fuente) console.info(`[fractal] física del servidor: ${fuente.bloques.length} fotogramas`)
-    } catch {
-      fuente = null
-    }
+  if (perfil === 'ultra' && vis.length > 0) {
+    fuente = await probarFuente(vis, dt, pasos)
+    if (fuente) console.info(`[fractal] física del servidor: ${fuente.bloques.length} fotogramas`)
   }
 
   if (perfil === 'ultra') {
@@ -46,17 +58,32 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   vel?.addEventListener('input', () => control.fijarVelocidad(Number(vel.value)))
 
   // Tabla accesible con escenario local (alternativa a 3D)
-  try {
-    const esc = await cargarEscenario('/datos/dos_cuerpos.json')
-    const vis = aVisual(esc)
+  if (vis.length > 0) {
     const tabla = document.getElementById('tabla')
     if (tabla) {
       tabla.innerHTML =
         '<tr><th>Cuerpo</th><th>Masa (kg)</th><th>Posición (m)</th></tr>' +
         vis.map((c) => `<tr><td>${c.nombre}</td><td>${c.masa.toExponential(2)}</td><td>${c.posicion.map((v) => v.toExponential(1)).join(', ')}</td></tr>`).join('')
     }
-  } catch {
-    /* sin tabla si no hay datos locales */
+  }
+
+  // Panel sandbox: edita en vivo y relanza contra el API (ULTRA con fuente viva).
+  const cajaSandbox = document.getElementById('sandbox')
+  if (cajaSandbox && vis.length > 0) {
+    const panel = montarSandbox(cajaSandbox, vis, dt, pasos, async (ed: EdicionSandbox) => {
+      panel.fijarEstado('calculando…')
+      const editados = aplicarEdicion(vis, ed)
+      const nueva = await probarFuente(editados, ed.dt, ed.pasos)
+      if (nueva && control.fijarFuente) {
+        control.fijarFuente(nueva)
+        panel.fijarEstado(`listo: ${nueva.bloques.length} fotogramas`)
+      } else {
+        panel.fijarEstado('sin servidor (demo local)')
+      }
+    })
+    if (perfil !== 'ultra') panel.fijarEstado('LITE: demo local')
+    else if (fuente) panel.fijarEstado(`listo: ${fuente.bloques.length} fotogramas`)
+    else panel.fijarEstado('sin servidor (demo local)')
   }
   console.info(`[fractal] perfil activo: ${perfil}`)
 }

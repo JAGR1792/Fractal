@@ -17,6 +17,8 @@ export interface ControlUltra {
   alternarPausa: () => void
   fijarVelocidad: (v: number) => void
   seleccionar: (id: string | null) => void
+  /** Cambia la fuente de fotogramas en vivo (`null` = demo local). */
+  fijarFuente: (f: FuenteEstados | null) => void
   destruir: () => void
   leerSeleccion: () => string | null
 }
@@ -253,11 +255,13 @@ export async function montarUltra(
   let tiempoFuente = 0
 
   // Servidor: interpola entre fotogramas binarios si hay historial válido.
-  const bloques = fuente && fuente.bloques.length >= 2 ? fuente.bloques : null
-  const tIni = bloques ? bloques[0][0] : 0
-  const tFin = bloques ? bloques[bloques.length - 1][0] : 0
-  const hayServidor = bloques !== null && tFin > tIni
-  const escalaFuente = fuente?.escala ?? 1
+  let bloques: Float32Array[] | null = fuente && fuente.bloques.length >= 2 ? fuente.bloques : null
+  let escalaFuente = fuente?.escala ?? 1
+
+  function rangoFuente(): { ini: number; fin: number } {
+    if (!bloques || bloques.length < 2) return { ini: 0, fin: 0 }
+    return { ini: bloques[0][0], fin: bloques[bloques.length - 1][0] }
+  }
 
   /** Escribe en `c` los centros interpolados del instante `t` (segundos sim). */
   function centrosServidor(c: Float32Array, t: number): void {
@@ -297,6 +301,8 @@ export async function montarUltra(
     }
     if (!pausado) angulo += 0.002 * velocidad
     const c = new Float32Array(centros)
+    const { ini: tIni, fin: tFin } = rangoFuente()
+    const hayServidor = bloques !== null && tFin > tIni
     if (hayServidor) {
       // Física real del servidor: una vuelta completa cada ~20 s a 1x.
       if (!pausado) tiempoFuente += (dtMs / 1000) * velocidad * ((tFin - tIni) / 20)
@@ -358,6 +364,11 @@ export async function montarUltra(
     alternarPausa: () => { pausado = !pausado },
     fijarVelocidad: (v: number) => { velocidad = v },
     seleccionar: (id: string | null) => { seleccionado = id },
+    fijarFuente: (f: FuenteEstados | null) => {
+      bloques = f && f.bloques.length >= 2 ? f.bloques : null
+      escalaFuente = f?.escala ?? 1
+      tiempoFuente = 0
+    },
     leerSeleccion: () => seleccionado,
     destruir: () => { vivo = false; desconectar() },
   }
