@@ -1,0 +1,30 @@
+# Configuración de rustfmt para Fractal
+
+# Usar la edición 2024 de Rust
+edition = "2024"
+
+# Ancho máximo de línea
+max_width = 100
+
+# Espacios por tabulación
+tab_spaces = 4
+
+# Estilo de importaciones
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+
+# Formato de cadenas
+use_small_heuristics = "Max"
+
+# Funciones cortas en una línea (si caben)
+fn_single_line = false
+
+# Estilo de llaves
+brace_style = "SameLineWhere"
+
+# Espacios alrededor de operadores
+space_around_attr_eq = true
+
+# Ordenar importaciones automáticamente
+reorder_imports = true
+reorder_modules = true

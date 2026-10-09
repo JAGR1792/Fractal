@@ -1,0 +1,21 @@
+# Configuración de clippy para Fractal
+
+# Denunciar todas las advertencias como errores en CI
+# Uso: cargo clippy -- -D warnings
+
+# Complejidad cognitiva máxima por función
+# Valor por defecto: 25, lo bajamos para forzar funciones simples
+cognitive-complexity-threshold = 20
+
+# Complejidad ciclomática máxima
+too-many-arguments-threshold = 7
+
+# Longitud máxima de función (líneas)
+too-many-lines-threshold = 100
+
+# Documentación obligatoria en items públicos
+missing-docs-in-crate-items = true
+
+# Lints adicionales recomendados para ciencia/matemáticas
+# Evitar flotantes en comparaciones directas
+# (usar siempre epsilon o tolerancia)

@@ -1,7 +1,7 @@
 {
   "id": "dos_cuerpos",
   "nombre": "Tierra-Luna",
-  "descripcion": "Sistema de dos cuerpos para validación del integrador",
+  "descripcion": "Sistema de dos cuerpos para validacion del integrador. Permite verificar conservacion de energia y momento.",
   "unidades": {
     "masa": "kg",
     "distancia": "m",
@@ -28,6 +28,6 @@
   "parametros": {
     "dt": 600.0,
     "pasos": 3900,
-    "descripcion": "10 pasos por hora, ~10 orbitas lunares"
+    "nota": "10 pasos por hora, aproximadamente 10 orbitas lunares completas"
   }
 }

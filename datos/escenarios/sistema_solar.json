@@ -1,7 +1,7 @@
 {
   "id": "sistema_solar",
   "nombre": "Sistema Solar",
-  "descripcion": "Sol y los 8 planetas con elementos orbitales aproximados J2000",
+  "descripcion": "Sol y los 8 planetas con elementos orbitales aproximados de la epoca J2000",
   "unidades": {
     "masa": "kg",
     "distancia": "m",
@@ -50,7 +50,7 @@
     },
     {
       "id": "jupiter",
-      "nombre": "Júpiter",
+      "nombre": "Jupiter",
       "masa": 1.898e27,
       "radio": 6.9911e7,
       "posicion": [7.785e11, 0.0, 0.0],
@@ -84,6 +84,6 @@
   "parametros": {
     "dt": 3600.0,
     "pasos": 87600,
-    "descripcion": "1 paso por hora, 10 años simulados"
+    "nota": "1 paso por hora, 10 anos simulados. Las velocidades son aproximaciones circulares."
   }
 }
