@@ -3,7 +3,7 @@
  * Sin motores. Un draw por cuerpo (N pequeño en LITE).
  */
 
-import { aVisual, cargarEscenario, normalizarPosiciones } from '../escenario'
+import { aVisual, cargarEscenario, normalizarPosiciones, tipoPlaneta } from '../escenario'
 import { camaraInicial, conectarControles, matrizProyeccion, matrizVista, multiplicar, type EstadoCamara } from '../camara'
 
 const VS = `#version 300 es
@@ -19,7 +19,38 @@ void main(){ vec3 mundo = p*uRadio+uCentro; vN=n; vC=uColor; gl_Position=uVP*vec
 const FS = `#version 300 es
 precision mediump float;
 in vec3 vN; in vec3 vC; out vec4 o;
-void main(){ float d=max(dot(normalize(vN),normalize(vec3(0.6,0.8,1.0))),0.0); o=vec4(vC*(0.25+0.85*d),1.0); }`
+uniform float uTipo;
+float h31(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719)))*43758.5453); }
+float rz3(vec3 p){
+  vec3 i = floor(p); vec3 f = fract(p); vec3 w = f*f*(3.0-2.0*f);
+  return mix(mix(mix(h31(i),h31(i+vec3(1.,0.,0.)),w.x),
+                 mix(h31(i+vec3(0.,1.,0.)),h31(i+vec3(1.,1.,0.)),w.x),w.y),
+             mix(mix(h31(i+vec3(0.,0.,1.)),h31(i+vec3(1.,0.,1.)),w.x),
+                 mix(h31(i+vec3(0.,1.,1.)),h31(i+vec3(1.,1.,1.)),w.x),w.y),w.z);
+}
+void main(){
+  vec3 n = normalize(vN);
+  vec3 base = vC;
+  if (uTipo > 0.5 && uTipo < 1.5) {
+    // Tierra procedural: océanos, continentes, hielo (nubes quietas en LITE)
+    float cont = rz3(n*3.0);
+    float masc = smoothstep(0.45, 0.55, cont);
+    float vr = rz3(n*6.0);
+    base = mix(vec3(0.12,0.3,0.75), mix(vec3(0.25,0.5,0.2), vec3(0.55,0.45,0.3), smoothstep(0.35,0.7,vr)), masc);
+    base = mix(base, vec3(0.9,0.93,0.96), smoothstep(0.72,0.85,abs(n.y)));
+  } else if (uTipo > 1.5 && uTipo < 2.5) {
+    // Luna procedural: gris con cráteres
+    float grano = 0.8 + 0.4*rz3(n*10.0);
+    float crater = step(0.82, h31(floor(n*16.0)))*0.3;
+    base = vec3(0.62,0.62,0.66)*grano - vec3(crater);
+  }
+  if (uTipo < 0.5) {
+    o = vec4(base*1.4 + vec3(0.35,0.12,0.02), 1.0); // sol emissive
+  } else {
+    float d = max(dot(n, normalize(vec3(0.6,0.8,1.0))), 0.0);
+    o = vec4(base*(0.35 + 0.75*d), 1.0);
+  }
+}`
 
 const VS_ORB = `#version 300 es
 layout(location=0) in vec3 p;
@@ -91,6 +122,7 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
   const locCentro = gl.getUniformLocation(prog, 'uCentro')
   const locRadio = gl.getUniformLocation(prog, 'uRadio')
   const locColor = gl.getUniformLocation(prog, 'uColor')
+  const locTipo = gl.getUniformLocation(prog, 'uTipo')
   const locVPOrb = gl.getUniformLocation(progOrb, 'uVP')
   const locColorOrb = gl.getUniformLocation(progOrb, 'uColor')
 
@@ -169,6 +201,7 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
       gl.uniform3f(locCentro, x, p0[1], z)
       gl.uniform1f(locRadio, c.radioVisual)
       gl.uniform3f(locColor, c.color[0], c.color[1], c.color[2])
+      gl.uniform1f(locTipo, tipoPlaneta(c.id))
       gl.drawElements(gl.TRIANGLES, esf.idx.length, gl.UNSIGNED_SHORT, 0)
     })
     gl.bindVertexArray(null)

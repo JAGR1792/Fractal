@@ -56,6 +56,19 @@ const COLORES_FALLBACK: Array<[number, number, number]> = [
 ]
 
 /**
+ * Tipo visual de un cuerpo para sombreado procedural.
+ * 0 = sol (emissive), 1 = tierra (océanos/continentes/nubes),
+ * 2 = luna (gris + cráteres), 3 = genérico (color plano + luz).
+ */
+export function tipoPlaneta(id: string): number {
+  const clave = id.toLowerCase()
+  if (clave === 'sol') return 0
+  if (clave === 'tierra') return 1
+  if (clave === 'luna') return 2
+  return 3
+}
+
+/**
  * Convierte radios físicos (m) a radios visuales (mundo).
  * Usa raíz cúbica para comprimir 3 órdenes de magnitud en ~1 orden visual.
  */

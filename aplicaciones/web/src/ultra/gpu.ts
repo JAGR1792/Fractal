@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { camaraInicial, conectarControles, matrizProyeccion, matrizVista, multiplicar, type EstadoCamara } from '../camara'
-import { aVisual, cargarEscenario, normalizarPosiciones, type CuerpoVisual } from '../escenario'
+import { camaraInicial, conectarControles, matrizProyeccion, matrizVista, multiplicar, ojoDeCamara, type EstadoCamara } from '../camara'
+import { aVisual, cargarEscenario, normalizarPosiciones, tipoPlaneta, type CuerpoVisual } from '../escenario'
 import planetaWGSL from './sombreadores/planeta.wgsl?raw'
 import orbitaWGSL from './sombreadores/orbita.wgsl?raw'
 
@@ -83,13 +83,13 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
   new Uint16Array(bufIdx.getMappedRange()).set(esfera.indices)
   bufIdx.unmap()
 
-  // Storage: centros + datos (radio + color)
+  // Storage: centros (xyz + tipo visual) + datos (radio + color)
   const n = visuales.length
   const centros = new Float32Array(n * 4)
   const datos = new Float32Array(n * 4)
   visuales.forEach((c, i) => {
     const p = posMundo.get(c.id) ?? [0, 0, 0]
-    centros.set([p[0], p[1], p[2], 0], i * 4)
+    centros.set([p[0], p[1], p[2], tipoPlaneta(c.id)], i * 4)
     datos.set([c.radioVisual, c.color[0], c.color[1], c.color[2]], i * 4)
   })
   const bufCentros: any = device.createBuffer({ size: centros.byteLength, usage: 0x8 | 0x80, mappedAtCreation: true })
@@ -99,7 +99,7 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
   new Float32Array(bufDatos.getMappedRange()).set(datos)
   bufDatos.unmap()
 
-  // Uniformes: viewProj(64) + luzDir(12+4pad) + tiempo(4) + brillo(4) + pad = 96 bytes
+  // Uniformes: viewProj(64) + luzDir(12)+tiempo(4) + camPos(12)+brillo(4) = 96 bytes
   const bufUni: any = device.createBuffer({ size: 96, usage: 0x40 | 0x8 })
   const modPlaneta: any = device.createShaderModule({ code: planetaWGSL })
   const modOrbita: any = device.createShaderModule({ code: orbitaWGSL })
@@ -159,6 +159,7 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
   let seleccionado: string | null = null
   let angulo = 0
   let vivo = true
+  const t0 = performance.now()
 
   function cuadro(): void {
     if (!vivo) return
@@ -188,12 +189,13 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
     const vista = matrizVista(cam)
     const proj = matrizProyeccion(w / h)
     const vp = multiplicar(proj, vista)
+    const ojo = ojoDeCamara(cam)
     const uni = new Float32Array(24)
     uni.set(vp, 0)
     uni.set([0.6, 0.8, 1.0], 16)
-    uni[19] = 0 // padding
-    uni[20] = 0 // tiempo
-    uni[21] = seleccionado ? 1.2 : 1.0 // brillo
+    uni[19] = (performance.now() - t0) / 1000 // tiempo (nubes, pulso sol)
+    uni.set(ojo, 20) // camPos
+    uni[23] = seleccionado ? 1.2 : 1.0 // brillo
     device.queue.writeBuffer(bufUni, 0, uni)
 
     const cod: any = device.createCommandEncoder()

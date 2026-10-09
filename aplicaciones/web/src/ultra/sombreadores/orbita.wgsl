@@ -5,6 +5,7 @@ struct Uniformes {
   viewProj: mat4x4<f32>,
   luzDir: vec3<f32>,
   tiempo: f32,
+  camPos: vec3<f32>,
   brillo: f32,
 }
 
