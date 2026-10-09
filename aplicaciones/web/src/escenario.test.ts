@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aVisual, normalizarPosiciones } from './escenario'
+import { aVisual, normalizarPosiciones, tipoPlaneta, urlTextura } from './escenario'
 
 describe('escala visual', () => {
   it('separa radio físico de visual', () => {
@@ -24,5 +24,18 @@ describe('escala visual', () => {
     const mapa = normalizarPosiciones(vis)
     const pb = mapa.get('b')!
     expect(Math.hypot(pb[0], pb[2])).toBeLessThanOrEqual(41)
+  })
+
+  it('clasifica tipos visuales por id', () => {
+    expect(tipoPlaneta('sol')).toBe(0)
+    expect(tipoPlaneta('Tierra')).toBe(1)
+    expect(tipoPlaneta('LUNA')).toBe(2)
+    expect(tipoPlaneta('marte')).toBe(3)
+  })
+
+  it('resuelve texturas vendorizadas del sandbox', () => {
+    expect(urlTextura('tierra')).toBe('/texturas/tierra.jpg')
+    expect(urlTextura('LUNA')).toBe('/texturas/luna.jpg')
+    expect(urlTextura('marte')).toBeNull()
   })
 })

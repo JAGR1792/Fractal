@@ -3,23 +3,41 @@
  * Sin motores. Un draw por cuerpo (N pequeño en LITE).
  */
 
-import { aVisual, cargarEscenario, normalizarPosiciones } from '../escenario'
+import { aVisual, cargarEscenario, normalizarPosiciones, tipoPlaneta, urlTextura } from '../escenario'
 import { camaraInicial, conectarControles, matrizProyeccion, matrizVista, multiplicar, type EstadoCamara } from '../camara'
 
 const VS = `#version 300 es
 layout(location=0) in vec3 p;
 layout(location=1) in vec3 n;
+layout(location=2) in vec2 uv;
 uniform mat4 uVP;
 uniform vec3 uCentro;
 uniform float uRadio;
-out vec3 vN; out vec3 vC;
+out vec3 vN; out vec3 vC; out vec2 vUV;
 uniform vec3 uColor;
-void main(){ vec3 mundo = p*uRadio+uCentro; vN=n; vC=uColor; gl_Position=uVP*vec4(mundo,1.0); }`
+void main(){ vec3 mundo = p*uRadio+uCentro; vN=n; vC=uColor; vUV=uv; gl_Position=uVP*vec4(mundo,1.0); }`
 
 const FS = `#version 300 es
 precision mediump float;
-in vec3 vN; in vec3 vC; out vec4 o;
-void main(){ float d=max(dot(normalize(vN),normalize(vec3(0.6,0.8,1.0))),0.0); o=vec4(vC*(0.25+0.85*d),1.0); }`
+in vec3 vN; in vec3 vC; in vec2 vUV; out vec4 o;
+uniform float uTipo;
+uniform sampler2D uTexTierra;
+uniform sampler2D uTexLuna;
+void main(){
+  vec3 n = normalize(vN);
+  vec3 base = vC;
+  if (uTipo > 0.5 && uTipo < 1.5) {
+    base = texture(uTexTierra, vUV).rgb;
+  } else if (uTipo > 1.5 && uTipo < 2.5) {
+    base = texture(uTexLuna, vUV).rgb;
+  }
+  if (uTipo < 0.5) {
+    o = vec4(base*1.4 + vec3(0.35,0.12,0.02), 1.0); // sol emissive
+  } else {
+    float d = max(dot(n, normalize(vec3(0.6,0.8,1.0))), 0.0);
+    o = vec4(base*(0.35 + 0.75*d), 1.0);
+  }
+}`
 
 const VS_ORB = `#version 300 es
 layout(location=0) in vec3 p;
@@ -47,9 +65,10 @@ function programa(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProg
   return p
 }
 
-function esferaCPU(lat = 20, lon = 14): { pos: Float32Array; nor: Float32Array; idx: Uint16Array } {
+function esferaCPU(lat = 20, lon = 14): { pos: Float32Array; nor: Float32Array; uvs: Float32Array; idx: Uint16Array } {
   const pos: number[] = []
   const nor: number[] = []
+  const uvs: number[] = []
   const idx: number[] = []
   for (let i = 0; i <= lat; i++) {
     const th = (i / lat) * Math.PI
@@ -60,6 +79,8 @@ function esferaCPU(lat = 20, lon = 14): { pos: Float32Array; nor: Float32Array; 
       const z = Math.sin(th) * Math.sin(ph)
       pos.push(x, y, z)
       nor.push(x, y, z)
+      // u invertida: sin el (1 - ...) el este sale a la izquierda (espejo).
+      uvs.push(1 - j / lon, i / lat)
     }
   }
   for (let i = 0; i < lat; i++) {
@@ -69,7 +90,27 @@ function esferaCPU(lat = 20, lon = 14): { pos: Float32Array; nor: Float32Array; 
       idx.push(a, b, a + 1, b, b + 1, a + 1)
     }
   }
-  return { pos: new Float32Array(pos), nor: new Float32Array(nor), idx: new Uint16Array(idx) }
+  return { pos: new Float32Array(pos), nor: new Float32Array(nor), uvs: new Float32Array(uvs), idx: new Uint16Array(idx) }
+}
+
+/** Carga una textura local con placeholder hasta que llegue la imagen. */
+function cargarTexturaGL(gl: WebGL2RenderingContext, url: string, reserva: [number, number, number]): WebGLTexture {
+  const tex = gl.createTexture()!
+  gl.bindTexture(gl.TEXTURE_2D, tex)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([reserva[0], reserva[1], reserva[2], 255]))
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  const img = new Image()
+  img.onload = () => {
+    gl.bindTexture(gl.TEXTURE_2D, tex)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+    gl.generateMipmap(gl.TEXTURE_2D)
+  }
+  img.onerror = () => console.warn(`[fractal/lite] sin textura ${url}`)
+  img.src = url
+  return tex
 }
 
 export interface ControlLite {
@@ -91,6 +132,9 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
   const locCentro = gl.getUniformLocation(prog, 'uCentro')
   const locRadio = gl.getUniformLocation(prog, 'uRadio')
   const locColor = gl.getUniformLocation(prog, 'uColor')
+  const locTipo = gl.getUniformLocation(prog, 'uTipo')
+  const locTexTierra = gl.getUniformLocation(prog, 'uTexTierra')
+  const locTexLuna = gl.getUniformLocation(prog, 'uTexLuna')
   const locVPOrb = gl.getUniformLocation(progOrb, 'uVP')
   const locColorOrb = gl.getUniformLocation(progOrb, 'uColor')
 
@@ -101,6 +145,9 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
   const bufNor = gl.createBuffer()!
   gl.bindBuffer(gl.ARRAY_BUFFER, bufNor)
   gl.bufferData(gl.ARRAY_BUFFER, esf.nor, gl.STATIC_DRAW)
+  const bufUV = gl.createBuffer()!
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufUV)
+  gl.bufferData(gl.ARRAY_BUFFER, esf.uvs, gl.STATIC_DRAW)
   const bufIdx = gl.createBuffer()!
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufIdx)
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, esf.idx, gl.STATIC_DRAW)
@@ -112,8 +159,15 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
   gl.bindBuffer(gl.ARRAY_BUFFER, bufNor)
   gl.enableVertexAttribArray(1)
   gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0)
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufUV)
+  gl.enableVertexAttribArray(2)
+  gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 0, 0)
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufIdx)
   gl.bindVertexArray(null)
+
+  // Texturas del catálogo (ver public/texturas/LEEME.md)
+  const texTierra = cargarTexturaGL(gl, urlTextura('tierra') ?? '', [31, 77, 191])
+  const texLuna = cargarTexturaGL(gl, urlTextura('luna') ?? '', [158, 158, 168])
 
   const vaoOrb = gl.createVertexArray()!
   const bufOrb = gl.createBuffer()!
@@ -155,6 +209,12 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
     // Planetas: un draw por cuerpo
     gl.useProgram(prog)
     gl.uniformMatrix4fv(locVP, false, vp)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, texTierra)
+    gl.uniform1i(locTexTierra, 0)
+    gl.activeTexture(gl.TEXTURE1)
+    gl.bindTexture(gl.TEXTURE_2D, texLuna)
+    gl.uniform1i(locTexLuna, 1)
     gl.bindVertexArray(vaoEsfera)
     visuales.forEach((c, i) => {
       const p0 = posMundo.get(c.id) ?? [10, 0, 0]
@@ -169,6 +229,7 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
       gl.uniform3f(locCentro, x, p0[1], z)
       gl.uniform1f(locRadio, c.radioVisual)
       gl.uniform3f(locColor, c.color[0], c.color[1], c.color[2])
+      gl.uniform1f(locTipo, tipoPlaneta(c.id))
       gl.drawElements(gl.TRIANGLES, esf.idx.length, gl.UNSIGNED_SHORT, 0)
     })
     gl.bindVertexArray(null)

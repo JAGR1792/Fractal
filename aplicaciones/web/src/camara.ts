@@ -16,16 +16,24 @@ export function camaraInicial(distancia = 80): EstadoCamara {
   return { yaw: 0.6, pitch: 0.5, distancia, objetivo: [0, 0, 0] }
 }
 
-/** Matriz vista 4x4 columna-mayor como Float32Array(16). */
-export function matrizVista(cam: EstadoCamara): Float32Array {
+/** Posición del ojo de la cámara en mundo (para fresnel y brillos especulares). */
+export function ojoDeCamara(cam: EstadoCamara): [number, number, number] {
   const [tx, ty, tz] = cam.objetivo
   const cp = Math.cos(cam.pitch)
   const sp = Math.sin(cam.pitch)
   const cy = Math.cos(cam.yaw)
   const sy = Math.sin(cam.yaw)
-  const ex = tx + cam.distancia * cp * sy
-  const ey = ty + cam.distancia * sp
-  const ez = tz + cam.distancia * cp * cy
+  return [
+    tx + cam.distancia * cp * sy,
+    ty + cam.distancia * sp,
+    tz + cam.distancia * cp * cy,
+  ]
+}
+
+/** Matriz vista 4x4 columna-mayor como Float32Array(16). */
+export function matrizVista(cam: EstadoCamara): Float32Array {
+  const [tx, ty, tz] = cam.objetivo
+  const [ex, ey, ez] = ojoDeCamara(cam)
   return mirarHacia([ex, ey, ez], [tx, ty, tz], [0, 1, 0])
 }
 
