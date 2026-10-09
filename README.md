@@ -1,6 +1,7 @@
 # Fractal
 
-Simulador orbital 3D educativo — explora el Sistema Solar, modifica las condiciones físicas y estudia las consecuencias mediante simulaciones calculadas en servidor.
+Simulador orbital 3D.
+
 
 ## Características
 
