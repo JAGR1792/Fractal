@@ -1,0 +1,3 @@
+[workspace]
+members = ["codigo/fisica", "codigo/renderizado"]
+resolver = "2"

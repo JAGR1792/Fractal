@@ -28,11 +28,11 @@ Fractal/
 │   └── escenarios/          ← Escenarios JSON de referencia
 ├── codigo/                  ← Código fuente (Etapa 1+)
 │   ├── fisica/              ← Motor gravitacional (biblioteca pura)
-│   ├── integradores/        ← Métodos numéricos
+│   ├── renderizado/         ← Interpolación y culling en Rust (WASM para ULTRA)
 │   ├── escenarios/          ← Carga y validación de escenarios
 │   └── api/                 ← Servidor Axum
-├── apps/
-│   └── web/                 ← Frontend Vue 3 + Three.js
+├── aplicaciones/
+│   └── web/                 ← Frontend Vue 3 + TypeScript + Vite (ULTRA/LITE)
 ├── tests/
 │   ├── cientificos/         ← Tests de física (sin servidor ni gráficos)
 │   ├── integracion/         ← Tests de API + cliente
@@ -40,7 +40,7 @@ Fractal/
 └── documentacion/           ← Documentación general del proyecto
 ```
 
-**Regla de oro:** el motor físico (`codigo/fisica/`) NO puede depender de Axum, Tokio, Three.js o cualquier framework. Debe compilar y testearse solo.
+**Regla de oro:** el motor físico (`codigo/fisica/`) NO puede depender de Axum, Tokio, WebGPU, WebGL ni de ningún framework. Debe compilar y testearse solo.
 
 ---
 

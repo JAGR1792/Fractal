@@ -32,6 +32,7 @@ Propuesto | Aceptado | Rechazado | Deprecado | Superseded por ADR-NNN
 | [ADR-0002](ADRs/0002-velocity-verlet-sobre-rk4.md) | Velocity Verlet sobre Runge-Kutta 4 | Aceptado |
 | [ADR-0003](ADRs/0003-unidades-si-internas.md) | Unidades SI internas con conversión en bordes | Aceptado |
 | [ADR-0004](ADRs/0004-codigo-y-documentacion-en-espanol.md) | Código y documentación en español | Aceptado |
+| [ADR-0005](ADRs/0005-renderizador-ultra-webgpu-wasm.md) | Renderizador ULTRA WebGPU+WASM sin motores | Aceptado |
 
 ## Cómo proponer un nuevo ADR
 

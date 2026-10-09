@@ -5,7 +5,7 @@ Simulador orbital 3D educativo — explora el Sistema Solar, modifica las condic
 ## Características
 
 - **Física newtoniana** con Velocity Verlet (conservación de energía a largo plazo)
-- **Visualización 3D** con Three.js + WebGL2 (fallback a WebGPU para alto rendimiento)
+- **Visualización 3D** con doble renderizador: ULTRA (WebGPU nativo + WASM/wgpu, máximo rendimiento) y LITE (WebGL2 mínimo, compatibilidad escolar)
 - **API asíncrona** con Axum + Tokio (simulaciones en background)
 - **Frontend** con Vue 3 + TypeScript + Vite
 - **Código y documentación en español**
@@ -17,10 +17,12 @@ Simulador orbital 3D educativo — explora el Sistema Solar, modifica las condic
 Fractal/
 ├── codigo/
 │   ├── fisica/          ← Motor gravitacional (biblioteca pura, sin dependencias)
-│   ├── integradores/    ← Velocity Verlet y futuros métodos
-│   └── api/             ← Servidor Axum
-├── apps/
-│   └── web/             ← Frontend Vue 3 + Three.js
+│   ├── renderizado/     ← Interpolación y culling en Rust (compila a WASM para ULTRA)
+│   └── api/             ← Servidor Axum (Etapa 3)
+├── aplicaciones/
+│   └── web/             ← Frontend Vue 3 + TypeScript + Vite
+│       ├── ultra/       ← Renderer WebGPU nativo + WGSL + WASM (máximo rendimiento)
+│       └── lite/        ← Renderer WebGL2 mínimo (compatibilidad escolar)
 ├── datos/
 │   └── escenarios/      ← Escenarios JSON de referencia
 ├── documentacion/

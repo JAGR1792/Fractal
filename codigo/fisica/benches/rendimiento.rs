@@ -3,8 +3,9 @@
 //! Detectan regresiones automáticamente en CI.
 //! Ejecutar: cargo bench --bench rendimiento
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use fractal_fisica::prelude::*;
+use std::hint::black_box;
 
 fn bench_sistema_solar_100_pasos(c: &mut Criterion) {
     let mut cuerpos =
