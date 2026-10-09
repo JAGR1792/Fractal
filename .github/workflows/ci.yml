@@ -66,7 +66,7 @@ jobs:
 
   # Verificar TypeScript del frontend (ULTRA/LITE, sin motores)
   web-tipos:
-    name: Web (tsc --noEmit)
+    name: Web (tsc + vitest)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -76,7 +76,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Instalar TypeScript
-        run: npm install --no-save typescript
+          cache: npm
+          cache-dependency-path: aplicaciones/web/package-lock.json
+      - name: Instalar dependencias
+        run: npm ci
       - name: Verificar tipos
         run: npx tsc --noEmit --skipLibCheck
+      - name: Tests web
+        run: npx vitest run

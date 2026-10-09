@@ -4,9 +4,29 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fractal — Simulador orbital</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0a0a18; color: #eee; font-family: sans-serif; }
+      #app { display: flex; flex-direction: column; height: 100vh; }
+      #barra { display: flex; gap: 8px; padding: 8px 12px; align-items: center; background: #12122a; }
+      #barra button { background: #2a2a5a; color: #fff; border: 1px solid #555; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+      #escena { flex: 1; width: 100%; min-height: 300px; touch-action: none; }
+      #aviso { padding: 6px 12px; font-size: 13px; color: #ffb; }
+      table { border-collapse: collapse; font-size: 13px; margin: 8px 12px; }
+      td, th { border: 1px solid #444; padding: 4px 8px; }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div id="barra">
+        <strong>Fractal</strong>
+        <button id="btnPausa">Pausar</button>
+        <label>Velocidad <input id="vel" type="range" min="0.1" max="10" step="0.1" value="1" /></label>
+        <span id="perfil"></span>
+      </div>
+      <canvas id="escena" tabindex="0" aria-label="Vista 3D del sistema solar. Flechas rotan, más y menos acercan, R resetea."></canvas>
+      <div id="aviso" role="status"></div>
+      <table id="tabla" aria-label="Datos tabulares de cuerpos (alternativa accesible)"></table>
+    </div>
     <script type="module" src="/src/principal.ts"></script>
   </body>
 </html>
