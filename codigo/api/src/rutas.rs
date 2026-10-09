@@ -6,6 +6,7 @@
 
 use crate::{
     almacen::Almacen,
+    binario::{VERSION_BINARIO, codificar},
     modelos::{
         ErrorApi, EstadoSimulacion, InfoSalud, PeticionSimulacion, RespuestaCreacion,
         RespuestaEstados,
@@ -13,6 +14,7 @@ use crate::{
 };
 use axum::{
     Json, Router,
+    body::Body,
     extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -60,6 +62,7 @@ pub fn crear_app(almacen: Almacen) -> Router {
         .route("/api/v1/simulaciones", post(crear_simulacion))
         .route("/api/v1/simulaciones/:id", get(leer_simulacion))
         .route("/api/v1/simulaciones/:id/estados", get(leer_estados))
+        .route("/api/v1/simulaciones/:id/binario", get(leer_binario))
         .with_state(almacen)
 }
 
@@ -123,4 +126,36 @@ async fn leer_estados(
             mensaje: "simulación no encontrada".to_string(),
         }),
     }
+}
+
+/// `GET /api/v1/simulaciones/:id/binario?desde=&limite=` — bloques f32 LE.
+///
+/// Cuerpo: bloques concatenados `[t, x,y,z,vx,vy,vz × N]` en little-endian.
+/// Cabeceras `x-fractal-*` describen el layout para `binario.ts`.
+async fn leer_binario(
+    State(almacen): State<Almacen>,
+    Path(id): Path<Uuid>,
+    Query(paginacion): Query<Paginacion>,
+) -> Result<Response, FalloApi> {
+    let Some((_, n_cuerpos, bloques)) =
+        almacen.rango(&id, paginacion.desde, paginacion.limite).await
+    else {
+        return Err(FalloApi {
+            codigo: StatusCode::NOT_FOUND,
+            mensaje: "simulación no encontrada".to_string(),
+        });
+    };
+    let cuerpo = codificar(&bloques, n_cuerpos);
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/octet-stream")
+        .header("x-fractal-version", VERSION_BINARIO.to_string())
+        .header("x-fractal-cuerpos", n_cuerpos.to_string())
+        .header("x-fractal-bloques", bloques.len().to_string())
+        .header("x-fractal-desde", paginacion.desde.to_string())
+        .body(Body::from(cuerpo))
+        .map_err(|_| FalloApi {
+            codigo: StatusCode::INTERNAL_SERVER_ERROR,
+            mensaje: "no se pudo armar la respuesta binaria".to_string(),
+        })
 }

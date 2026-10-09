@@ -1,9 +1,11 @@
 import { elegirPerfil, type PerfilRender } from './detector'
 import { cargarEscenario, aVisual } from './escenario'
+import { probarFuente, type FuenteEstados } from './api'
 
 /**
  * Entrada web Fractal ULTRA/LITE.
  * Monta canvas 3D + barra de controles + tabla accesible (RF01, RF02, RF08).
+ * Si el API responde, ULTRA anima física real del servidor; si no, demo local.
  */
 async function arrancar(forzar?: PerfilRender): Promise<void> {
   const perfil = await elegirPerfil(forzar)
@@ -14,9 +16,22 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
 
   let control: { alternarPausa: () => void; fijarVelocidad: (v: number) => void; destruir?: () => void }
 
+  // Fuente del servidor (solo ULTRA por ahora): no bloquea si el API cae.
+  let fuente: FuenteEstados | null = null
+  if (perfil === 'ultra') {
+    try {
+      const esc = await cargarEscenario('/datos/dos_cuerpos.json')
+      const vis = aVisual(esc)
+      fuente = await probarFuente(vis, esc.parametros?.dt ?? 600, esc.parametros?.pasos ?? 3900)
+      if (fuente) console.info(`[fractal] física del servidor: ${fuente.bloques.length} fotogramas`)
+    } catch {
+      fuente = null
+    }
+  }
+
   if (perfil === 'ultra') {
     const { montarUltra } = await import('./ultra/gpu')
-    control = await montarUltra(lienzo)
+    control = await montarUltra(lienzo, '/datos/dos_cuerpos.json', fuente)
   } else {
     const { montarLite } = await import('./lite/webgl2_minimo')
     control = montarLite(lienzo)

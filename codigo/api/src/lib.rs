@@ -15,6 +15,7 @@
 //! llega después; esta etapa devuelve JSON para validar el flujo completo.
 
 pub mod almacen;
+pub mod binario;
 pub mod modelos;
 pub mod rutas;
 

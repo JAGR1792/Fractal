@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { camaraInicial, conectarControles, matrizProyeccion, matrizVista, multiplicar, ojoDeCamara, type EstadoCamara } from '../camara'
 import { aVisual, cargarEscenario, normalizarPosiciones, tipoPlaneta, urlTextura, type CuerpoVisual } from '../escenario'
+import type { FuenteEstados } from '../api'
 import planetaWGSL from './sombreadores/planeta.wgsl?raw'
 import orbitaWGSL from './sombreadores/orbita.wgsl?raw'
 
@@ -105,7 +106,11 @@ async function cargarTextura(device: any, url: string, colorFondo: [number, numb
   }
 }
 
-export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos_cuerpos.json'): Promise<ControlUltra> {
+export async function montarUltra(
+  lienzo: HTMLCanvasElement,
+  urlEscenario = '/datos/dos_cuerpos.json',
+  fuente: FuenteEstados | null = null,
+): Promise<ControlUltra> {
   const nav: any = navigator as any
   if (!nav.gpu) throw new Error('sin WebGPU')
   const adapter: any = await nav.gpu.requestAdapter()
@@ -244,10 +249,43 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
   let cuadros = 0
   const tituloBase = document.title
   const t0 = performance.now()
+  let ultimoMs = t0
+  let tiempoFuente = 0
+
+  // Servidor: interpola entre fotogramas binarios si hay historial válido.
+  const bloques = fuente && fuente.bloques.length >= 2 ? fuente.bloques : null
+  const tIni = bloques ? bloques[0][0] : 0
+  const tFin = bloques ? bloques[bloques.length - 1][0] : 0
+  const hayServidor = bloques !== null && tFin > tIni
+  const escalaFuente = fuente?.escala ?? 1
+
+  /** Escribe en `c` los centros interpolados del instante `t` (segundos sim). */
+  function centrosServidor(c: Float32Array, t: number): void {
+    if (!bloques) return
+    let k = 0
+    while (k + 1 < bloques.length - 1 && bloques[k + 1][0] <= t) k++
+    const a = bloques[k]
+    const b = bloques[Math.min(k + 1, bloques.length - 1)]
+    const tramo = b[0] - a[0]
+    const alpha = tramo > 0 ? Math.min(Math.max((t - a[0]) / tramo, 0), 1) : 0
+    visuales.forEach((_v, i) => {
+      const base = 1 + i * 6
+      const x = a[base] + (b[base] - a[base]) * alpha
+      const y = a[base + 1] + (b[base + 1] - a[base + 1]) * alpha
+      const z = a[base + 2] + (b[base + 2] - a[base + 2]) * alpha
+      // Misma convención que normalizarPosiciones: [x, z, y] × escala.
+      c[i * 4] = x * escalaFuente
+      c[i * 4 + 1] = z * escalaFuente
+      c[i * 4 + 2] = y * escalaFuente
+    })
+  }
 
   function cuadro(): void {
     if (!vivo) return
     requestAnimationFrame(cuadro)
+    const ahora = performance.now()
+    const dtMs = Math.min(ahora - ultimoMs, 100)
+    ultimoMs = ahora
     const w = lienzo.clientWidth || 800
     const h = lienzo.clientHeight || 600
     if (lienzo.width !== w || lienzo.height !== h) {
@@ -258,16 +296,22 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
       necesitaVista = true
     }
     if (!pausado) angulo += 0.002 * velocidad
-    // Rotación simple de cuerpos no centrales (demo sin servidor aún)
     const c = new Float32Array(centros)
-    visuales.forEach((v, i) => {
-      if (i === 0) return
-      const p0 = posMundo.get(v.id) ?? [10, 0, 0]
-      const r = Math.hypot(p0[0], p0[2])
-      const a = angulo * (10 / r)
-      c[i * 4] = Math.cos(a) * r
-      c[i * 4 + 2] = Math.sin(a) * r
-    })
+    if (hayServidor) {
+      // Física real del servidor: una vuelta completa cada ~20 s a 1x.
+      if (!pausado) tiempoFuente += (dtMs / 1000) * velocidad * ((tFin - tIni) / 20)
+      centrosServidor(c, tIni + ((tiempoFuente % (tFin - tIni)) + (tFin - tIni)) % (tFin - tIni))
+    } else {
+      // Demo local sin servidor: rotación simple de cuerpos no centrales.
+      visuales.forEach((v, i) => {
+        if (i === 0) return
+        const p0 = posMundo.get(v.id) ?? [10, 0, 0]
+        const r = Math.hypot(p0[0], p0[2])
+        const a = angulo * (10 / r)
+        c[i * 4] = Math.cos(a) * r
+        c[i * 4 + 2] = Math.sin(a) * r
+      })
+    }
     device.queue.writeBuffer(bufCentros, 0, c)
 
     const vista = matrizVista(cam)
