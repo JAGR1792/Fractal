@@ -1,0 +1,33 @@
+{
+  "id": "dos_cuerpos",
+  "nombre": "Tierra-Luna",
+  "descripcion": "Sistema de dos cuerpos para validación del integrador",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "tierra",
+      "nombre": "Tierra",
+      "masa": 5.972e24,
+      "radio": 6.371e6,
+      "posicion": [0.0, 0.0, 0.0],
+      "velocidad": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "luna",
+      "nombre": "Luna",
+      "masa": 7.342e22,
+      "radio": 1.737e6,
+      "posicion": [3.844e8, 0.0, 0.0],
+      "velocidad": [0.0, 1022.0, 0.0]
+    }
+  ],
+  "parametros": {
+    "dt": 600.0,
+    "pasos": 3900,
+    "descripcion": "10 pasos por hora, ~10 orbitas lunares"
+  }
+}
