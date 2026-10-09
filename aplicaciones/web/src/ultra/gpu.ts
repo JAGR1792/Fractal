@@ -34,8 +34,9 @@ function esferaUnitaria(lat = 24, lon = 18): { posiciones: Float32Array; normale
       const z = Math.sin(theta) * Math.sin(phi)
       pos.push(x, y, z)
       nor.push(x, y, z)
-      // UV equirect: v=0 en el polo norte (primera fila de la imagen)
-      uvs.push(j / lon, i / lat)
+      // UV equirect: v=0 en el polo norte (primera fila de la imagen).
+      // u invertida: sin el (1 - ...) el este sale a la izquierda (espejo).
+      uvs.push(1 - j / lon, i / lat)
     }
   }
   for (let i = 0; i < lat; i++) {

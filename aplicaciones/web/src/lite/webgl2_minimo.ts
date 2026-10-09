@@ -79,7 +79,8 @@ function esferaCPU(lat = 20, lon = 14): { pos: Float32Array; nor: Float32Array; 
       const z = Math.sin(th) * Math.sin(ph)
       pos.push(x, y, z)
       nor.push(x, y, z)
-      uvs.push(j / lon, i / lat)
+      // u invertida: sin el (1 - ...) el este sale a la izquierda (espejo).
+      uvs.push(1 - j / lon, i / lat)
     }
   }
   for (let i = 0; i < lat; i++) {
