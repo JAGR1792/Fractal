@@ -124,6 +124,7 @@ function cargarTexturaGL(gl: WebGL2RenderingContext, url: string, reserva: [numb
 export interface ControlLite {
   alternarPausa: () => void
   fijarVelocidad: (v: number) => void
+  leerTiempo: () => number
   destruir: () => void
 }
 
@@ -279,6 +280,7 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
   return {
     alternarPausa: () => { pausado = !pausado },
     fijarVelocidad: (v: number) => { velocidad = v },
+    leerTiempo: () => spinLite,
     destruir: () => { vivo = false; desconectar() },
   }
 }
