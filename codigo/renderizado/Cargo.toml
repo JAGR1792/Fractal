@@ -1,0 +1,12 @@
+[package]
+name = "fractal-renderizado"
+version = "0.1.0"
+edition = "2024"
+description = "Interpolación y culling en Rust para Fractal ULTRA — compila a nativo (tests) y a WASM (navegador)"
+license = "MIT"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[lib]
+crate-type = ["cdylib", "rlib"]
