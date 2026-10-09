@@ -39,7 +39,7 @@ async fn salud_responde_bien() {
 async fn crear_y_leer_simulacion() {
     let servidor = TestServer::new(crear_app(Almacen::nuevo())).unwrap();
 
-    let mut crear = servidor.post("/api/v1/simulaciones").json(&peticion_dos_cuerpos()).await;
+    let crear = servidor.post("/api/v1/simulaciones").json(&peticion_dos_cuerpos()).await;
     crear.assert_status(axum::http::StatusCode::ACCEPTED);
     let creada: Value = crear.json();
     let id = creada["id"].as_str().unwrap().to_string();
