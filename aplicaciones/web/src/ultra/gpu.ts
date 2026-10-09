@@ -253,7 +253,8 @@ export async function montarUltra(
   const t0 = performance.now()
   let ultimoMs = t0
   let tiempoFuente = 0
-  let spinAcum = 0
+  // Segundos SIMULADOS para la rotación propia (ver periodoRotacion en WGSL).
+  let spinSim = 0
   let ultimosCentros: Float32Array = centros
   const radios = visuales.map((c) => c.radioVisual * 1.2)
 
@@ -351,15 +352,19 @@ export async function montarUltra(
       necesitaVista = true
     }
     if (!pausado) angulo += 0.002 * velocidad
-    if (!pausado) spinAcum += (dtMs / 1000) * velocidad
     const c = new Float32Array(centros)
     const { ini: tIni, fin: tFin } = rangoFuente()
     const hayServidor = bloques !== null && tFin > tIni
     if (hayServidor) {
       // Física real del servidor: una vuelta completa cada ~20 s a 1x.
       if (!pausado) tiempoFuente += (dtMs / 1000) * velocidad * ((tFin - tIni) / 20)
-      centrosServidor(c, tIni + ((tiempoFuente % (tFin - tIni)) + (tFin - tIni)) % (tFin - tIni))
+      const t = tIni + ((tiempoFuente % (tFin - tIni)) + (tFin - tIni)) % (tFin - tIni)
+      spinSim = t
+      centrosServidor(c, t)
     } else {
+      // Demo local sin servidor: 1440 s sim por segundo real (la tierra
+      // completa su día en ~60 s a 1x); órbitas circulares simples.
+      if (!pausado) spinSim += (dtMs / 1000) * velocidad * 1440
       // Demo local sin servidor: rotación simple de cuerpos no centrales.
       visuales.forEach((v, i) => {
         if (i === 0) return
@@ -383,7 +388,7 @@ export async function montarUltra(
     uni[19] = (performance.now() - t0) / 1000 // tiempo (nubes, pulso sol)
     uni.set(ojo, 20) // camPos
     uni[23] = seleccionado ? 1.2 : 1.0 // brillo
-    uni[24] = spinAcum // rotación propia (respeta pausa y velocidad)
+    uni[24] = spinSim // rotación propia en segundos sim (respeta pausa)
     device.queue.writeBuffer(bufUni, 0, uni)
 
     const cod: any = device.createCommandEncoder()

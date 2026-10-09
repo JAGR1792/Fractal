@@ -18,9 +18,9 @@ uniform float uSpin;
 out vec3 vN; out vec3 vC; out vec2 vUV;
 uniform vec3 uColor;
 vec3 rotY(vec3 q, float a){ float c = cos(a); float s = sin(a); return vec3(c*q.x + s*q.z, q.y, -s*q.x + c*q.z); }
-float tasa(float t){ if (t < 0.5) return 0.01; if (t < 1.5) return 0.1047; if (t < 2.5) return 0.0038; return 0.0524; }
+float periodo(float t){ if (t < 0.5) return 2160000.0; if (t < 1.5) return 86164.0; if (t < 2.5) return 2360448.0; return 86400.0; }
 void main(){
-  float g = uSpin * tasa(uTipo);
+  float g = uSpin * 6.2831853 / periodo(uTipo);
   vec3 pr = rotY(p, g);
   vec3 mundo = pr*uRadio+uCentro; vN=rotY(n, g); vC=uColor; vUV=uv; gl_Position=uVP*vec4(mundo,1.0);
 }`
@@ -214,7 +214,7 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
     }
     gl.viewport(0, 0, lienzo.width, lienzo.height)
     if (!pausado) angulo += 0.004 * velocidad
-    if (!pausado) spinLite += dtS * velocidad
+    if (!pausado) spinLite += dtS * velocidad * 1440 // segundos sim (ver periodo en GLSL)
     gl.clearColor(0.03, 0.03, 0.1, 1)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     gl.enable(gl.DEPTH_TEST)

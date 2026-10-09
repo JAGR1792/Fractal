@@ -90,10 +90,10 @@ mod pruebas {
     #[test]
     fn tiempos_y_luna_sobreviven_ida_vuelta() {
         let bytes = codificar(&dos_cuerpos(), 2);
-        let f32s: Vec<f32> = bytes
-            .chunks_exact(4)
-            .map(|pedazo| f32::from_le_bytes([pedazo[0], pedazo[1], pedazo[2], pedazo[3]]))
-            .collect();
+        let (f32s, resto) = bytes.as_chunks::<4>();
+        assert!(resto.is_empty());
+        let f32s: Vec<f32> =
+            f32s.iter().map(|pedazo| f32::from_le_bytes(*pedazo)).collect();
         assert_eq!(f32s.len(), 2 * (1 + 12));
         assert!((f32s[0] - 0.0).abs() < f32::EPSILON);
         assert!((f32s[13] - 3600.0).abs() < 0.001);
