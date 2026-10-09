@@ -16,7 +16,7 @@ Mapa vivo del proyecto: dónde vamos y qué falta. Actualizar en cada etapa.
 ## Etapa 2 — resto
 
 1. Luz: subir ambiente `0.12 → 0.35`, luz desde la cámara, fresnel con dirección de vista real (hoy usa `vec3(0,0,1)` fijo).
-2. Planetas procedurales por tipo en `centros.w` (`0=sol emissivo, 1=tierra, 2=luna`): continentes/nubes/casquetes para tierra, cráteres para luna. Igual en WGSL y GLSL. Sin texturas descargadas.
+2. Texturas NASA vendorizadas para tierra/luna (`public/texturas/`, catálogo `TEXTURAS_POR_ID` en `escenario.ts` para el sandbox). Hecho en `agent/alya/etapa2-pulido`: UVs equirect + sampler en ULTRA/LITE, procedural como fallback genérico.
 3. Binding WASM de `codigo/renderizado` (interpolador + culling) hacia `aplicaciones/web`.
 4. Medir fps en GPU real vs integrada y fijar umbrales de perfiles (`renderizador.md §6`).
 5. Mensaje claro de "sin WebGPU" para Linux: indicar `chrome://gpu`, `navigator.gpu` y flags (`--enable-unsafe-webgpu`), que el fallback a LITE es por diseño (ADR-0005).

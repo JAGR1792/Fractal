@@ -57,8 +57,8 @@ const COLORES_FALLBACK: Array<[number, number, number]> = [
 
 /**
  * Tipo visual de un cuerpo para sombreado procedural.
- * 0 = sol (emissive), 1 = tierra (océanos/continentes/nubes),
- * 2 = luna (gris + cráteres), 3 = genérico (color plano + luz).
+ * 0 = sol (emissive), 1 = tierra (textura), 2 = luna (textura),
+ * 3 = genérico (color plano + luz, o textura si el sandbox la registra).
  */
 export function tipoPlaneta(id: string): number {
   const clave = id.toLowerCase()
@@ -66,6 +66,22 @@ export function tipoPlaneta(id: string): number {
   if (clave === 'tierra') return 1
   if (clave === 'luna') return 2
   return 3
+}
+
+/**
+ * Catálogo de texturas vendorizadas para el sandbox.
+ * Clave = id del cuerpo en minúsculas, valor = URL local servida por Vite
+ * (ver `public/texturas/LEEME.md`). Sin hotlinks: todo en local para
+ * colegios sin internet. Los ids sin entrada usan sombreado procedural.
+ */
+export const TEXTURAS_POR_ID: Record<string, string> = {
+  tierra: '/texturas/tierra.jpg',
+  luna: '/texturas/luna.jpg',
+}
+
+/** URL local de la textura de un cuerpo, o `null` si usa procedural. */
+export function urlTextura(id: string): string | null {
+  return TEXTURAS_POR_ID[id.toLowerCase()] ?? null
 }
 
 /**

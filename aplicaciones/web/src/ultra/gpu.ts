@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { camaraInicial, conectarControles, matrizProyeccion, matrizVista, multiplicar, ojoDeCamara, type EstadoCamara } from '../camara'
-import { aVisual, cargarEscenario, normalizarPosiciones, tipoPlaneta, type CuerpoVisual } from '../escenario'
+import { aVisual, cargarEscenario, normalizarPosiciones, tipoPlaneta, urlTextura, type CuerpoVisual } from '../escenario'
 import planetaWGSL from './sombreadores/planeta.wgsl?raw'
 import orbitaWGSL from './sombreadores/orbita.wgsl?raw'
 
@@ -17,9 +17,10 @@ export interface ControlUltra {
   leerSeleccion: () => string | null
 }
 
-function esferaUnitaria(lat = 24, lon = 18): { posiciones: Float32Array; normales: Float32Array; indices: Uint16Array } {
+function esferaUnitaria(lat = 24, lon = 18): { posiciones: Float32Array; normales: Float32Array; uvs: Float32Array; indices: Uint16Array } {
   const pos: number[] = []
   const nor: number[] = []
+  const uvs: number[] = []
   const idx: number[] = []
   for (let i = 0; i <= lat; i++) {
     const theta = (i / lat) * Math.PI
@@ -30,6 +31,8 @@ function esferaUnitaria(lat = 24, lon = 18): { posiciones: Float32Array; normale
       const z = Math.sin(theta) * Math.sin(phi)
       pos.push(x, y, z)
       nor.push(x, y, z)
+      // UV equirect: v=0 en el polo norte (primera fila de la imagen)
+      uvs.push(j / lon, i / lat)
     }
   }
   for (let i = 0; i < lat; i++) {
@@ -39,7 +42,35 @@ function esferaUnitaria(lat = 24, lon = 18): { posiciones: Float32Array; normale
       idx.push(a, b, a + 1, b, b + 1, a + 1)
     }
   }
-  return { posiciones: new Float32Array(pos), normales: new Float32Array(nor), indices: new Uint16Array(idx) }
+  return { posiciones: new Float32Array(pos), normales: new Float32Array(nor), uvs: new Float32Array(uvs), indices: new Uint16Array(idx) }
+}
+
+/** Carga una textura local a GPU (ver `public/texturas/LEEME.md`). */
+async function cargarTextura(device: any, url: string, colorFondo: [number, number, number, number]): Promise<any> {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const mapaBits = await createImageBitmap(await res.blob())
+    const textura: any = device.createTexture({
+      size: [mapaBits.width, mapaBits.height],
+      format: 'rgba8unorm',
+      // Dawn exige RENDER_ATTACHMENT para copyExternalImageToTexture.
+      // GPUTextureUsage: TEXTURE_BINDING=0x10, COPY_DST=0x08, RENDER_ATTACHMENT=0x40.
+      usage: 0x10 | 0x08 | 0x40,
+    })
+    device.queue.copyExternalImageToTexture({ source: mapaBits }, { texture: textura }, [mapaBits.width, mapaBits.height])
+    return textura
+  } catch (e) {
+    console.warn(`[fractal/ultra] sin textura ${url}, uso color plano:`, e)
+    const reserva: any = device.createTexture({ size: [2, 2], format: 'rgba8unorm', usage: 0x10 | 0x08 })
+    device.queue.writeTexture(
+      { texture: reserva },
+      new Uint8Array(colorFondo.map((v) => Math.round(v * 255))),
+      { bytesPerRow: 8 },
+      [2, 2],
+    )
+    return reserva
+  }
 }
 
 export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos_cuerpos.json'): Promise<ControlUltra> {
@@ -51,7 +82,13 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
   device.addEventListener?.('uncapturederror', (e: any) => {
     console.error('[fractal/ultra] WebGPU error:', e?.error ?? e)
     const aviso = document.getElementById('aviso')
-    if (aviso) aviso.textContent = `ULTRA error: ${String(e?.error?.message ?? e?.message ?? e)}`
+    // Conservar el PRIMER error: los siguientes son solo cascada del submit.
+    if (aviso && !aviso.dataset.error) {
+      aviso.dataset.error = '1'
+      const msg = String(e?.error?.message ?? e?.message ?? e)
+      aviso.textContent = `ULTRA error: ${msg}`
+      document.title = `ULTRA ERROR: ${msg.slice(0, 100)}`
+    }
   })
   const contexto: any = (lienzo as any).getContext('webgpu')
   if (!contexto) throw new Error('sin contexto webgpu')
@@ -82,6 +119,15 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
   const bufIdx: any = device.createBuffer({ size: esfera.indices.byteLength, usage: 0x10 | 0x8, mappedAtCreation: true })
   new Uint16Array(bufIdx.getMappedRange()).set(esfera.indices)
   bufIdx.unmap()
+  const bufUV: any = device.createBuffer({ size: esfera.uvs.byteLength, usage: 0x20 | 0x8, mappedAtCreation: true })
+  new Float32Array(bufUV.getMappedRange()).set(esfera.uvs)
+  bufUV.unmap()
+
+  // Texturas vendorizadas (tierra/luna). El catálogo vive en escenario.ts
+  // para que el sandbox registre más planetas (ver public/texturas/LEEME.md).
+  const texTierra: any = await cargarTextura(device, urlTextura('tierra') ?? '', [0.12, 0.3, 0.75, 1])
+  const texLuna: any = await cargarTextura(device, urlTextura('luna') ?? '', [0.62, 0.62, 0.66, 1])
+  const muestreador: any = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'repeat', addressModeV: 'clamp-to-edge' })
 
   // Storage: centros (xyz + tipo visual) + datos (radio + color)
   const n = visuales.length
@@ -108,6 +154,7 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
     vertex: { module: modPlaneta, entryPoint: 'vs', buffers: [
       { arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] },
       { arrayStride: 12, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x3' }] },
+      { arrayStride: 8, attributes: [{ shaderLocation: 2, offset: 0, format: 'float32x2' }] },
     ]},
     fragment: { module: modPlaneta, entryPoint: 'fs', targets: [{ format: formato }] },
     primitive: { topology: 'triangle-list', cullMode: 'none' },
@@ -144,13 +191,16 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
     primitive: { topology: 'line-list' },
     depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth24plus' },
   })
-  let texProf: any = device.createTexture({ size: [lienzo.width || 800, lienzo.height || 600], sampleCount: 1, format: 'depth24plus', usage: 0x10 })
+  let texProf: any = device.createTexture({ size: [lienzo.width || 800, lienzo.height || 600], sampleCount: 1, format: 'depth24plus', usage: 0x40 })
   let vistaProf: any = texProf.createView()
 
   const grupoPlaneta: any = device.createBindGroup({ layout: pipePlaneta.getBindGroupLayout(0), entries: [
     { binding: 0, resource: { buffer: bufUni } },
     { binding: 1, resource: { buffer: bufCentros } },
     { binding: 2, resource: { buffer: bufDatos } },
+    { binding: 3, resource: texTierra.createView() },
+    { binding: 4, resource: texLuna.createView() },
+    { binding: 5, resource: muestreador },
   ]})
   const grupoOrbita: any = device.createBindGroup({ layout: pipeOrbita.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: bufUni } }]})
 
@@ -159,6 +209,8 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
   let seleccionado: string | null = null
   let angulo = 0
   let vivo = true
+  let cuadros = 0
+  const tituloBase = document.title
   const t0 = performance.now()
 
   function cuadro(): void {
@@ -169,7 +221,7 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
     if (lienzo.width !== w || lienzo.height !== h) {
       lienzo.width = w; lienzo.height = h
       texProf.destroy?.()
-      texProf = device.createTexture({ size: [w, h], sampleCount: 1, format: 'depth24plus', usage: 0x10 })
+      texProf = device.createTexture({ size: [w, h], sampleCount: 1, format: 'depth24plus', usage: 0x40 })
       vistaProf = texProf.createView()
       necesitaVista = true
     }
@@ -211,11 +263,14 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
     paso.setBindGroup(0, grupoPlaneta)
     paso.setVertexBuffer(0, bufVert)
     paso.setVertexBuffer(1, bufNor)
+    paso.setVertexBuffer(2, bufUV)
     paso.setIndexBuffer(bufIdx, 'uint16')
     paso.drawIndexed(esfera.indices.length, n, 0, 0, 0)
     paso.end()
     device.queue.submit([cod.finish()])
     necesitaVista = false
+    cuadros += 1
+    if (cuadros === 30) document.title = `${tituloBase} · ULTRA OK`
   }
   requestAnimationFrame(cuadro)
 
