@@ -84,6 +84,16 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     if (perfil !== 'ultra') panel.fijarEstado('LITE: demo local')
     else if (fuente) panel.fijarEstado(`listo: ${fuente.bloques.length} fotogramas`)
     else panel.fijarEstado('sin servidor (demo local)')
+
+    // Picking 3D → sandbox: clic en un planeta lo selecciona en el panel.
+    window.addEventListener('fractal-seleccion', ((e: CustomEvent<{ id: string | null }>) => {
+      const id = e.detail.id
+      if (id) {
+        panel.fijarCuerpo(id)
+        const cuerpo = vis.find((c) => c.id === id)
+        if (cuerpo) panel.fijarEstado(`${cuerpo.nombre} seleccionado`)
+      }
+    }) as EventListener)
   }
   console.info(`[fractal] perfil activo: ${perfil}`)
 }

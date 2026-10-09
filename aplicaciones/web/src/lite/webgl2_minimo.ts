@@ -13,9 +13,17 @@ layout(location=2) in vec2 uv;
 uniform mat4 uVP;
 uniform vec3 uCentro;
 uniform float uRadio;
+uniform float uTipo;
+uniform float uSpin;
 out vec3 vN; out vec3 vC; out vec2 vUV;
 uniform vec3 uColor;
-void main(){ vec3 mundo = p*uRadio+uCentro; vN=n; vC=uColor; vUV=uv; gl_Position=uVP*vec4(mundo,1.0); }`
+vec3 rotY(vec3 q, float a){ float c = cos(a); float s = sin(a); return vec3(c*q.x + s*q.z, q.y, -s*q.x + c*q.z); }
+float tasa(float t){ if (t < 0.5) return 0.01; if (t < 1.5) return 0.1047; if (t < 2.5) return 0.0038; return 0.0524; }
+void main(){
+  float g = uSpin * tasa(uTipo);
+  vec3 pr = rotY(p, g);
+  vec3 mundo = pr*uRadio+uCentro; vN=rotY(n, g); vC=uColor; vUV=uv; gl_Position=uVP*vec4(mundo,1.0);
+}`
 
 const FS = `#version 300 es
 precision mediump float;
@@ -133,6 +141,7 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
   const locRadio = gl.getUniformLocation(prog, 'uRadio')
   const locColor = gl.getUniformLocation(prog, 'uColor')
   const locTipo = gl.getUniformLocation(prog, 'uTipo')
+  const locSpin = gl.getUniformLocation(prog, 'uSpin')
   const locTexTierra = gl.getUniformLocation(prog, 'uTexTierra')
   const locTexLuna = gl.getUniformLocation(prog, 'uTexLuna')
   const locVPOrb = gl.getUniformLocation(progOrb, 'uVP')
@@ -188,10 +197,15 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
   let velocidad = 1
   let angulo = 0
   let vivo = true
+  let spinLite = 0
+  let ultimoMs = performance.now()
 
   function cuadro(): void {
     if (!vivo) return
     requestAnimationFrame(cuadro)
+    const ahora = performance.now()
+    const dtS = Math.min((ahora - ultimoMs) / 1000, 0.1)
+    ultimoMs = ahora
     const w = lienzo.clientWidth || 800
     const h = lienzo.clientHeight || 600
     if (lienzo.width !== w || lienzo.height !== h) {
@@ -200,6 +214,7 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
     }
     gl.viewport(0, 0, lienzo.width, lienzo.height)
     if (!pausado) angulo += 0.004 * velocidad
+    if (!pausado) spinLite += dtS * velocidad
     gl.clearColor(0.03, 0.03, 0.1, 1)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     gl.enable(gl.DEPTH_TEST)
@@ -215,6 +230,7 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
     gl.activeTexture(gl.TEXTURE1)
     gl.bindTexture(gl.TEXTURE_2D, texLuna)
     gl.uniform1i(locTexLuna, 1)
+    gl.uniform1f(locSpin, spinLite)
     gl.bindVertexArray(vaoEsfera)
     visuales.forEach((c, i) => {
       const p0 = posMundo.get(c.id) ?? [10, 0, 0]

@@ -59,6 +59,79 @@ export function multiplicar(a: Float32Array, b: Float32Array): Float32Array {
   return m
 }
 
+/** Inversa de una matriz 4x4 columna-mayor (para picking por rayo). */
+export function invertir(m: Float32Array): Float32Array {
+  // Gauss-Jordan sobre [M | I] en filas (doble precisión, sin cofactores).
+  const a: number[][] = []
+  for (let r = 0; r < 4; r++) {
+    a.push([
+      m[r], m[4 + r], m[8 + r], m[12 + r],
+      r === 0 ? 1 : 0, r === 1 ? 1 : 0, r === 2 ? 1 : 0, r === 3 ? 1 : 0,
+    ])
+  }
+  for (let c = 0; c < 4; c++) {
+    let piv = c
+    for (let r = c + 1; r < 4; r++) {
+      if (Math.abs(a[r][c]) > Math.abs(a[piv][c])) piv = r
+    }
+    if (Math.abs(a[piv][c]) < 1e-12) return new Float32Array(16)
+    const tmp = a[c]
+    a[c] = a[piv]
+    a[piv] = tmp
+    const d = a[c][c]
+    for (let k = 0; k < 8; k++) a[c][k] /= d
+    for (let r = 0; r < 4; r++) {
+      if (r === c) continue
+      const f = a[r][c]
+      for (let k = 0; k < 8; k++) a[r][k] -= f * a[c][k]
+    }
+  }
+  const inv = new Float32Array(16)
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 4; c++) inv[c * 4 + r] = a[r][4 + c]
+  }
+  return inv
+}
+
+export interface Rayo {
+  origen: [number, number, number]
+  direccion: [number, number, number]
+}
+
+/** Rayo en mundo desde un píxel del canvas (para picking). */
+export function rayoDesdePantalla(px: number, py: number, ancho: number, alto: number, invVP: Float32Array): Rayo {
+  const ndc: [number, number] = [(px / ancho) * 2 - 1, 1 - (py / alto) * 2]
+  const desproyectar = (z: number): [number, number, number] => {
+    const x = ndc[0], y = ndc[1]
+    const w = invVP[3] * x + invVP[7] * y + invVP[11] * z + invVP[15]
+    const s = w !== 0 ? 1 / w : 1
+    return [
+      (invVP[0] * x + invVP[4] * y + invVP[8] * z + invVP[12]) * s,
+      (invVP[1] * x + invVP[5] * y + invVP[9] * z + invVP[13]) * s,
+      (invVP[2] * x + invVP[6] * y + invVP[10] * z + invVP[14]) * s,
+    ]
+  }
+  const cerca = desproyectar(-1)
+  const lejos = desproyectar(1)
+  const dx = lejos[0] - cerca[0], dy = lejos[1] - cerca[1], dz = lejos[2] - cerca[2]
+  const n = Math.hypot(dx, dy, dz) || 1
+  return { origen: cerca, direccion: [dx / n, dy / n, dz / n] }
+}
+
+/** Intersección rayo-esfera: distancia `t` al impacto o `null` si no toca. */
+export function tocaEsfera(rayo: Rayo, centro: [number, number, number], radio: number): number | null {
+  const ox = rayo.origen[0] - centro[0]
+  const oy = rayo.origen[1] - centro[1]
+  const oz = rayo.origen[2] - centro[2]
+  const dx = rayo.direccion[0], dy = rayo.direccion[1], dz = rayo.direccion[2]
+  const b = ox * dx + oy * dy + oz * dz
+  const c = ox * ox + oy * oy + oz * oz - radio * radio
+  const h = b * b - c
+  if (h < 0) return null
+  const t = -b - Math.sqrt(h)
+  return t > 0 ? t : null
+}
+
 function mirarHacia(ojo: number[], centro: number[], arriba: number[]): Float32Array {
   const z = normar([ojo[0] - centro[0], ojo[1] - centro[1], ojo[2] - centro[2]])
   const x = normar(cruz(arriba, z))

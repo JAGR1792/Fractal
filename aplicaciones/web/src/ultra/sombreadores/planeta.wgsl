@@ -11,6 +11,8 @@ struct Uniformes {
   tiempo: f32,
   camPos: vec3<f32>,
   brillo: f32,
+  spin: f32,
+  relleno: vec3<f32>,
 }
 
 @group(0) @binding(0) var<uniform> u: Uniformes;
@@ -38,15 +40,38 @@ fn vs(
 ) -> Salida {
   let c = centros[inst];
   let d = datos[inst];
-  let mundo = vec3<f32>(vertice * d.x + c.xyz);
+  // Rotación propia: una vuelta de la tierra cada 60 s a 1x (ver tasaSpin).
+  let giro = u.spin * tasaSpin(c.w);
+  let mundo = vec3<f32>(rotY(vertice, giro) * d.x + c.xyz);
   var s: Salida;
   s.pos = u.viewProj * vec4<f32>(mundo, 1.0);
-  s.normal = normal;
+  s.normal = rotY(normal, giro);
   s.color = d.yzw;
   s.vista = mundo;
   s.tipo = c.w;
   s.uv = uv;
   return s;
+}
+
+/// Rota un vector alrededor del eje Y (rotación propia de los cuerpos).
+fn rotY(p: vec3<f32>, a: f32) -> vec3<f32> {
+  let c = cos(a);
+  let s = sin(a);
+  return vec3<f32>(c * p.x + s * p.z, p.y, -s * p.x + c * p.z);
+}
+
+/// Vueltas por segundo de spin (rad/s): tierra 1/60 s, luna 1/27 días, resto lento.
+fn tasaSpin(tipo: f32) -> f32 {
+  if (tipo < 0.5) {
+    return 0.01;
+  }
+  if (tipo < 1.5) {
+    return 0.1047;
+  }
+  if (tipo < 2.5) {
+    return 0.0038;
+  }
+  return 0.0524;
 }
 
 @fragment

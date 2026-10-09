@@ -67,7 +67,11 @@ export function montarSandbox(
   dt: number,
   pasos: number,
   alLanzar: (ed: EdicionSandbox) => void,
-): { fijarEstado: (msg: string) => void; destruir: () => void } {
+): {
+  fijarEstado: (msg: string) => void
+  fijarCuerpo: (id: string) => void
+  destruir: () => void
+} {
   contenedor.innerHTML =
     '<strong>Sandbox</strong>' +
     '<label>Cuerpo <select id="sbCuerpo">' +
@@ -102,6 +106,13 @@ export function montarSandbox(
     fijarEstado: (msg: string) => {
       const estado = contenedor.querySelector('#sbEstado') as HTMLElement
       if (estado) estado.textContent = msg
+    },
+    /** Selecciona el cuerpo en el desplegable (viene del picking 3D). */
+    fijarCuerpo: (id: string) => {
+      const existe = cuerpos.some((c) => c.id === id)
+      if (!existe) return
+      sel.value = id
+      refrescar(contenedor, cuerpos)
     },
     destruir: () => {
       sel.removeEventListener('change', alCambiarCuerpo)
