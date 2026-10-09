@@ -57,19 +57,15 @@ fn fs(e: Salida) -> @location(0) vec4<f32> {
   let dia = smoothstep(-0.08, 0.25, dot(n, l));
   let ambiente = 0.35;
 
-  // Sol: emissive, sin noche.
-  if (e.tipo < 0.5) {
-    let pulso = 0.92 + 0.08 * sin(u.tiempo * 2.0 + e.vista.x);
-    var col = e.color * 1.5 * pulso * u.brillo;
-    col += vec3<f32>(0.35, 0.12, 0.02);
-    return vec4<f32>(col, 1.0);
-  }
-
+  // Muestreo en flujo uniforme (sin returns previos): WGSL lo exige.
+  let texT = textureSample(texTierra, muestreador, e.uv).rgb;
+  let texL = textureSample(texLuna, muestreador, e.uv).rgb;
   var base = e.color;
   if (e.tipo > 0.5 && e.tipo < 1.5) {
-    base = textureSample(texTierra, muestreador, e.uv).rgb;
-  } else if (e.tipo > 1.5 && e.tipo < 2.5) {
-    base = textureSample(texLuna, muestreador, e.uv).rgb;
+    base = texT;
+  }
+  if (e.tipo > 1.5 && e.tipo < 2.5) {
+    base = texL;
   }
   var col = base * (ambiente + dia * 0.85) * u.brillo;
   // Fresnel atmosférico en el borde, con vista real (gris en la luna).
@@ -77,5 +73,10 @@ fn fs(e: Salida) -> @location(0) vec4<f32> {
   let esLuna = step(1.5, e.tipo) * (1.0 - step(2.5, e.tipo));
   let tinte = mix(vec3<f32>(0.3, 0.55, 1.0), vec3<f32>(0.7), esLuna);
   col += tinte * borde * 0.4 * (0.25 + 0.75 * dia);
+
+  // Sol emissive sin noche: mezcla final, sin returns tempranos.
+  let pulso = 0.92 + 0.08 * sin(u.tiempo * 2.0 + e.vista.x);
+  let colSol = e.color * 1.5 * pulso * u.brillo + vec3<f32>(0.35, 0.12, 0.02);
+  col = mix(col, colSol, 1.0 - step(0.5, e.tipo));
   return vec4<f32>(col, 1.0);
 }

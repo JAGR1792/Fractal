@@ -4,6 +4,9 @@ import { aVisual, cargarEscenario, normalizarPosiciones, tipoPlaneta, urlTextura
 import planetaWGSL from './sombreadores/planeta.wgsl?raw'
 import orbitaWGSL from './sombreadores/orbita.wgsl?raw'
 
+// Usos de textura con nombre (no hex de memoria): GPUTextureUsage del navegador.
+const TU: any = (globalThis as any).GPUTextureUsage ?? { TEXTURE_BINDING: 0x10, COPY_DST: 0x08, RENDER_ATTACHMENT: 0x40 }
+
 /**
  * ULTRA: WebGPU nativo + instancing + órbitas merged.
  * Sin motores. 1 draw de planetas + 1 draw de órbitas.
@@ -47,22 +50,10 @@ function esferaUnitaria(lat = 24, lon = 18): { posiciones: Float32Array; normale
 
 /** Carga una textura local a GPU (ver `public/texturas/LEEME.md`). */
 async function cargarTextura(device: any, url: string, colorFondo: [number, number, number, number]): Promise<any> {
-  try {
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const mapaBits = await createImageBitmap(await res.blob())
-    const textura: any = device.createTexture({
-      size: [mapaBits.width, mapaBits.height],
-      format: 'rgba8unorm',
-      // Dawn exige RENDER_ATTACHMENT para copyExternalImageToTexture.
-      // GPUTextureUsage: TEXTURE_BINDING=0x10, COPY_DST=0x08, RENDER_ATTACHMENT=0x40.
-      usage: 0x10 | 0x08 | 0x40,
-    })
-    device.queue.copyExternalImageToTexture({ source: mapaBits }, { texture: textura }, [mapaBits.width, mapaBits.height])
-    return textura
-  } catch (e) {
-    console.warn(`[fractal/ultra] sin textura ${url}, uso color plano:`, e)
-    const reserva: any = device.createTexture({ size: [2, 2], format: 'rgba8unorm', usage: 0x10 | 0x08 })
+  // Constantes con nombre: inmunes a errores de memoria con los bits hex.
+  const USO_MUESTREO = TU.TEXTURE_BINDING | TU.COPY_DST
+  const crearReserva = (): any => {
+    const reserva: any = device.createTexture({ size: [2, 2], format: 'rgba8unorm', usage: USO_MUESTREO })
     device.queue.writeTexture(
       { texture: reserva },
       new Uint8Array(colorFondo.map((v) => Math.round(v * 255))),
@@ -70,6 +61,46 @@ async function cargarTextura(device: any, url: string, colorFondo: [number, numb
       [2, 2],
     )
     return reserva
+  }
+  try {
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const mapaBits = await createImageBitmap(await res.blob())
+    // Vía canvas2D + writeTexture: solo exige COPY_DST (sin RENDER_ATTACHMENT).
+    const lienzo2d = document.createElement('canvas')
+    lienzo2d.width = mapaBits.width
+    lienzo2d.height = mapaBits.height
+    const ctx = lienzo2d.getContext('2d')
+    if (!ctx) throw new Error('sin contexto 2d')
+    ctx.drawImage(mapaBits, 0, 0)
+    const datos = ctx.getImageData(0, 0, lienzo2d.width, lienzo2d.height)
+    const textura: any = device.createTexture({
+      size: [lienzo2d.width, lienzo2d.height],
+      format: 'rgba8unorm',
+      usage: USO_MUESTREO,
+    })
+    // writeTexture exige bytesPerRow múltiplo de 256: rellenar si hace falta.
+    const fila = lienzo2d.width * 4
+    const paso = Math.ceil(fila / 256) * 256
+    const denso: Uint8Array = paso === fila
+      ? new Uint8Array(datos.data.buffer)
+      : (() => {
+          const buf = new Uint8Array(paso * lienzo2d.height)
+          for (let y = 0; y < lienzo2d.height; y++) {
+            buf.set(datos.data.subarray(y * fila, (y + 1) * fila), y * paso)
+          }
+          return buf
+        })()
+    device.queue.writeTexture(
+      { texture: textura },
+      denso,
+      { bytesPerRow: paso },
+      [lienzo2d.width, lienzo2d.height],
+    )
+    return textura
+  } catch (e) {
+    console.warn(`[fractal/ultra] sin textura ${url}, uso color plano:`, e)
+    return crearReserva()
   }
 }
 
@@ -191,7 +222,7 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
     primitive: { topology: 'line-list' },
     depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth24plus' },
   })
-  let texProf: any = device.createTexture({ size: [lienzo.width || 800, lienzo.height || 600], sampleCount: 1, format: 'depth24plus', usage: 0x40 })
+  let texProf: any = device.createTexture({ size: [lienzo.width || 800, lienzo.height || 600], sampleCount: 1, format: 'depth24plus', usage: TU.RENDER_ATTACHMENT })
   let vistaProf: any = texProf.createView()
 
   const grupoPlaneta: any = device.createBindGroup({ layout: pipePlaneta.getBindGroupLayout(0), entries: [
@@ -221,7 +252,7 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
     if (lienzo.width !== w || lienzo.height !== h) {
       lienzo.width = w; lienzo.height = h
       texProf.destroy?.()
-      texProf = device.createTexture({ size: [w, h], sampleCount: 1, format: 'depth24plus', usage: 0x40 })
+      texProf = device.createTexture({ size: [w, h], sampleCount: 1, format: 'depth24plus', usage: TU.RENDER_ATTACHMENT })
       vistaProf = texProf.createView()
       necesitaVista = true
     }
@@ -270,7 +301,11 @@ export async function montarUltra(lienzo: HTMLCanvasElement, urlEscenario = '/da
     device.queue.submit([cod.finish()])
     necesitaVista = false
     cuadros += 1
-    if (cuadros === 30) document.title = `${tituloBase} · ULTRA OK`
+    // OK honesto: solo si no hubo ningún error de GPU antes.
+    const aviso = document.getElementById('aviso')
+    if (cuadros === 30 && aviso && !aviso.dataset.error) {
+      document.title = `${tituloBase} · ULTRA OK`
+    }
   }
   requestAnimationFrame(cuadro)
 
