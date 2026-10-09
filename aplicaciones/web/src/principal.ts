@@ -19,6 +19,7 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     alternarPausa: () => void
     fijarVelocidad: (v: number) => void
     fijarFuente?: (f: FuenteEstados | null) => void
+    leerTiempo?: () => number
     destruir?: () => void
   }
 
@@ -57,6 +58,17 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   const vel = document.getElementById('vel') as HTMLInputElement | null
   vel?.addEventListener('input', () => control.fijarVelocidad(Number(vel.value)))
 
+  // Reloj de tiempo simulado + toggle del panel.
+  const reloj = document.getElementById('tiempo')
+  setInterval(() => {
+    if (!reloj) return
+    const t = control.leerTiempo?.()
+    reloj.textContent = t === undefined ? '—' : `T+ ${formatearTiempo(t)}`
+  }, 250)
+  const cajaSandbox = document.getElementById('sandbox')
+  const btnSandbox = document.getElementById('btnSandbox') as HTMLButtonElement | null
+  btnSandbox?.addEventListener('click', () => cajaSandbox?.classList.toggle('cerrado'))
+
   // Tabla accesible con escenario local (alternativa a 3D)
   if (vis.length > 0) {
     const tabla = document.getElementById('tabla')
@@ -68,7 +80,6 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   }
 
   // Panel sandbox: edita en vivo y relanza contra el API (ULTRA con fuente viva).
-  const cajaSandbox = document.getElementById('sandbox')
   if (cajaSandbox && vis.length > 0) {
     const panel = montarSandbox(cajaSandbox, vis, dt, pasos, async (ed: EdicionSandbox) => {
       panel.fijarEstado('calculando…')
@@ -96,6 +107,14 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     }) as EventListener)
   }
   console.info(`[fractal] perfil activo: ${perfil}`)
+}
+
+/** Reloj estilo sandbox: minutos, horas o días según la magnitud. */
+function formatearTiempo(s: number): string {
+  if (s < 120) return `${s.toFixed(0)} s`
+  if (s < 7200) return `${(s / 60).toFixed(1)} min`
+  if (s < 172800) return `${(s / 3600).toFixed(1)} h`
+  return `${(s / 86400).toFixed(2)} días`
 }
 
 document.addEventListener('DOMContentLoaded', () => {

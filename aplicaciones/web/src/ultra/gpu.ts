@@ -19,6 +19,8 @@ export interface ControlUltra {
   seleccionar: (id: string | null) => void
   /** Cambia la fuente de fotogramas en vivo (`null` = demo local). */
   fijarFuente: (f: FuenteEstados | null) => void
+  /** Segundos simulados actuales (para el reloj de la barra). */
+  leerTiempo: () => number
   destruir: () => void
   leerSeleccion: () => string | null
 }
@@ -257,6 +259,8 @@ export async function montarUltra(
   let spinSim = 0
   let ultimosCentros: Float32Array = centros
   const radios = visuales.map((c) => c.radioVisual * 1.2)
+  // Cuerpo que la cámara persigue (clic lo fija, R o clic al vacío lo suelta).
+  let seguido: string | null = null
 
   /** Cuerpo bajo el cursor (rayo-esfera sobre los últimos centros). */
   function cuerpoBajoCursor(e: MouseEvent): string | null {
@@ -280,6 +284,7 @@ export async function montarUltra(
 
   function avisarSeleccion(id: string | null): void {
     seleccionado = id
+    seguido = id // la cámara persigue al seleccionado (clic al vacío la suelta)
     window.dispatchEvent(new CustomEvent('fractal-seleccion', { detail: { id } }))
   }
 
@@ -302,26 +307,70 @@ export async function montarUltra(
     cam.objetivo = [ultimosCentros[i * 4], ultimosCentros[i * 4 + 1], ultimosCentros[i * 4 + 2]]
     avisarSeleccion(id)
   }
+  // R resetea la pose en camara.ts: aquí además se suelta el perseguido.
+  const alTecla = (e: KeyboardEvent): void => {
+    if (e.key === 'r' || e.key === 'R') seguido = null
+  }
   lienzo.addEventListener('pointerdown', alDown)
   lienzo.addEventListener('click', alClick)
   lienzo.addEventListener('dblclick', alDoble)
+  window.addEventListener('keydown', alTecla)
 
   // Servidor: interpola entre fotogramas binarios si hay historial válido.
   let bloques: Float32Array[] | null = fuente && fuente.bloques.length >= 2 ? fuente.bloques : null
   let escalaFuente = fuente?.escala ?? 1
+  // Último bloque del bucle: primera órbita completa del cuerpo 1 alrededor
+  // del 0 (detectada por ángulo). Loopear ahí es física continua hacia
+  // adelante: sin saltos y sin viajes en el tiempo.
+  let limiteBucle = 0
+
+  function detectarBucle(): number {
+    const lista = bloques
+    if (!lista || lista.length < 3 || visuales.length < 2) {
+      return lista ? lista.length - 1 : 0
+    }
+    // Planos candidatos (índices dx,dy en el bloque): la órbita puede vivir
+    // en cualquiera según el escenario (dos_cuerpos usa XY).
+    const planos: Array<[number, number, number, number]> = [
+      [1, 2, 7, 8],
+      [1, 3, 7, 9],
+      [2, 3, 8, 9],
+    ]
+    const angulo = (b: Float32Array, p: [number, number, number, number]): number =>
+      Math.atan2(b[p[3]] - b[p[1]], b[p[2]] - b[p[0]])
+    const estado = planos.map((p) => ({ p, previo: angulo(lista[0], p), acum: 0 }))
+    for (let k = 1; k < lista.length; k++) {
+      const b = lista[k]
+      for (const s of estado) {
+        const a = angulo(b, s.p)
+        let d = a - s.previo
+        if (d > Math.PI) d -= 2 * Math.PI
+        if (d < -Math.PI) d += 2 * Math.PI
+        s.acum += d
+        s.previo = a
+        if (Math.abs(s.acum) >= 2 * Math.PI - 0.05) return k
+      }
+    }
+    return lista.length - 1
+  }
 
   function rangoFuente(): { ini: number; fin: number } {
     if (!bloques || bloques.length < 2) return { ini: 0, fin: 0 }
-    return { ini: bloques[0][0], fin: bloques[bloques.length - 1][0] }
+    const fin = bloques[Math.min(limiteBucle, bloques.length - 1)][0]
+    return { ini: bloques[0][0], fin }
   }
+
+  // El bucle se calcula una vez por fuente (montaje y cada fijarFuente).
+  limiteBucle = detectarBucle()
 
   /** Escribe en `c` los centros interpolados del instante `t` (segundos sim). */
   function centrosServidor(c: Float32Array, t: number): void {
     if (!bloques) return
+    const tope = Math.min(limiteBucle, bloques.length - 1)
     let k = 0
-    while (k + 1 < bloques.length - 1 && bloques[k + 1][0] <= t) k++
+    while (k + 1 < tope && bloques[k + 1][0] <= t) k++
     const a = bloques[k]
-    const b = bloques[Math.min(k + 1, bloques.length - 1)]
+    const b = bloques[Math.min(k + 1, tope)]
     const tramo = b[0] - a[0]
     const alpha = tramo > 0 ? Math.min(Math.max((t - a[0]) / tramo, 0), 1) : 0
     visuales.forEach((_v, i) => {
@@ -356,9 +405,11 @@ export async function montarUltra(
     const { ini: tIni, fin: tFin } = rangoFuente()
     const hayServidor = bloques !== null && tFin > tIni
     if (hayServidor) {
-      // Física real del servidor: una vuelta completa cada ~20 s a 1x.
-      if (!pausado) tiempoFuente += (dtMs / 1000) * velocidad * ((tFin - tIni) / 20)
-      const t = tIni + ((tiempoFuente % (tFin - tIni)) + (tFin - tIni)) % (tFin - tIni)
+      // Física real hacia adelante: el bucle cierra una órbita completa
+      // (ver detectarBucle), así el reinicio es invisible.
+      const span = tFin - tIni
+      if (!pausado) tiempoFuente += (dtMs / 1000) * velocidad * (span / 20)
+      const t = tIni + ((tiempoFuente % span) + span) % span
       spinSim = t
       centrosServidor(c, t)
     } else {
@@ -377,6 +428,16 @@ export async function montarUltra(
     }
     device.queue.writeBuffer(bufCentros, 0, c)
     ultimosCentros = c
+
+    // Seguimiento: el objetivo persigue al cuerpo seleccionado cada frame.
+    if (seguido !== null) {
+      const i = visuales.findIndex((v) => v.id === seguido)
+      if (i >= 0) {
+        cam.objetivo = [ultimosCentros[i * 4], ultimosCentros[i * 4 + 1], ultimosCentros[i * 4 + 2]]
+      } else {
+        seguido = null
+      }
+    }
 
     const vista = matrizVista(cam)
     const proj = matrizProyeccion(w / h)
@@ -427,14 +488,17 @@ export async function montarUltra(
       bloques = f && f.bloques.length >= 2 ? f.bloques : null
       escalaFuente = f?.escala ?? 1
       tiempoFuente = 0
+      limiteBucle = detectarBucle()
     },
     leerSeleccion: () => seleccionado,
+    leerTiempo: () => spinSim,
     destruir: () => {
       vivo = false
       desconectar()
       lienzo.removeEventListener('pointerdown', alDown)
       lienzo.removeEventListener('click', alClick)
       lienzo.removeEventListener('dblclick', alDoble)
+      window.removeEventListener('keydown', alTecla)
     },
   }
 }

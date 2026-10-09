@@ -23,38 +23,51 @@ export function aplicarEdicion(visuales: CuerpoVisual[], ed: EdicionSandbox): Cu
   )
 }
 
-/** Lee la edición actual del panel (masa en escala logarítmica). */
+/** Lee la edición actual del panel (los numéricos mandan). */
 function leerEdicion(raiz: HTMLElement): EdicionSandbox {
-  const tomar = (id: string): string => (raiz.querySelector(`#${id}`) as HTMLInputElement)?.value ?? ''
+  const num = (id: string): number => Number((raiz.querySelector(`#${id}`) as HTMLInputElement)?.value ?? '0')
   return {
     cuerpoId: (raiz.querySelector('#sbCuerpo') as HTMLSelectElement)?.value ?? '',
-    masa: Math.pow(10, Number(tomar('sbMasa'))),
-    vx: Number(tomar('sbVx')),
-    vy: Number(tomar('sbVy')),
-    dt: Number(tomar('sbDt')),
-    pasos: Number(tomar('sbPasos')),
+    masa: num('sbMasaNum'),
+    vx: num('sbVxNum'),
+    vy: num('sbVyNum'),
+    dt: num('sbDtNum'),
+    pasos: Math.round(num('sbPasosNum')),
   }
 }
 
-/** Refresca etiquetas y sliders con los valores del cuerpo elegido. */
+/** Une un slider con su numérico en ambas direcciones. */
+function parSincronizado(
+  raiz: HTMLElement,
+  idRango: string,
+  idNum: string,
+  aNumero: (v: number) => number,
+  aRango: (v: number) => number,
+): void {
+  const rango = raiz.querySelector(`#${idRango}`) as HTMLInputElement
+  const num = raiz.querySelector(`#${idNum}`) as HTMLInputElement
+  const min = Number(rango.min), max = Number(rango.max)
+  rango.addEventListener('input', () => {
+    num.value = String(aNumero(Number(rango.value)))
+  })
+  num.addEventListener('input', () => {
+    const v = aRango(Number(num.value))
+    if (Number.isFinite(v)) rango.value = String(Math.min(max, Math.max(min, v)))
+  })
+}
+
+/** Refresca sliders y numéricos con los valores del cuerpo elegido. */
 function refrescar(raiz: HTMLElement, cuerpos: CuerpoVisual[]): void {
   const sel = raiz.querySelector('#sbCuerpo') as HTMLSelectElement
   const cuerpo = cuerpos.find((c) => c.id === sel.value) ?? cuerpos[0]
   if (!cuerpo) return
-  const fijar = (id: string, v: number): void => {
-    const input = raiz.querySelector(`#${id}`) as HTMLInputElement
-    const etiqueta = raiz.querySelector(`#${id}Val`) as HTMLElement
-    input.value = String(v)
-    if (etiqueta) etiqueta.textContent = etiqueta.dataset['formato'] === 'exp' ? Number(v).toExponential(1) : String(v)
+  const fijar = (idRango: string, idNum: string, rango: number, numero: string): void => {
+    ;(raiz.querySelector(`#${idRango}`) as HTMLInputElement).value = String(rango)
+    ;(raiz.querySelector(`#${idNum}`) as HTMLInputElement).value = numero
   }
-  fijar('sbMasa', Math.log10(cuerpo.masa))
-  fijar('sbVx', cuerpo.velocidad[0])
-  fijar('sbVy', cuerpo.velocidad[1])
-  const poner = (id: string, texto: string): void => {
-    const etiqueta = raiz.querySelector(`#${id}Val`) as HTMLElement
-    if (etiqueta) etiqueta.textContent = texto
-  }
-  poner('sbMasa', cuerpo.masa.toExponential(1))
+  fijar('sbMasa', 'sbMasaNum', Math.log10(cuerpo.masa), cuerpo.masa.toExponential(2))
+  fijar('sbVx', 'sbVxNum', cuerpo.velocidad[0], String(Math.round(cuerpo.velocidad[0])))
+  fijar('sbVy', 'sbVyNum', cuerpo.velocidad[1], String(Math.round(cuerpo.velocidad[1])))
 }
 
 /**
@@ -73,29 +86,43 @@ export function montarSandbox(
   destruir: () => void
 } {
   contenedor.innerHTML =
-    '<strong>Sandbox</strong>' +
-    '<label>Cuerpo <select id="sbCuerpo">' +
+    '<div class="grupo"><span class="titulo">Cuerpo</span>' +
+    '<select id="sbCuerpo">' +
     cuerpos.map((c) => `<option value="${c.id}">${c.nombre}</option>`).join('') +
-    '</select></label>' +
-    '<label>Masa <input id="sbMasa" type="range" min="20" max="31" step="0.1" /><span id="sbMasaVal"></span></label>' +
-    '<label>Vx <input id="sbVx" type="range" min="-30000" max="30000" step="50" /><span id="sbVxVal"></span></label>' +
-    '<label>Vy <input id="sbVy" type="range" min="-30000" max="30000" step="50" /><span id="sbVyVal"></span></label>' +
-    '<label>dt(s) <input id="sbDt" type="range" min="10" max="3600" step="10" value="' + dt + '" /><span id="sbDtVal">' + dt + '</span></label>' +
-    '<label>Pasos <input id="sbPasos" type="range" min="50" max="20000" step="50" value="' + pasos + '" /><span id="sbPasosVal">' + pasos + '</span></label>' +
-    '<button id="sbLanzar">Lanzar</button>' +
-    '<span id="sbEstado" role="status"></span>'
+    '</select></div>' +
+    '<div class="grupo"><span class="titulo">Masa (kg)</span><div class="fila">' +
+    '<input id="sbMasa" type="range" min="20" max="31" step="0.1" />' +
+    '<input id="sbMasaNum" type="number" min="1e20" max="1e31" step="any" /></div></div>' +
+    '<div class="grupo"><span class="titulo">Vx (m/s)</span><div class="fila">' +
+    '<input id="sbVx" type="range" min="-30000" max="30000" step="50" />' +
+    '<input id="sbVxNum" type="number" min="-30000" max="30000" step="50" /></div></div>' +
+    '<div class="grupo"><span class="titulo">Vy (m/s)</span><div class="fila">' +
+    '<input id="sbVy" type="range" min="-30000" max="30000" step="50" />' +
+    '<input id="sbVyNum" type="number" min="-30000" max="30000" step="50" /></div></div>' +
+    '<div class="grupo"><span class="titulo">dt (s)</span><div class="fila">' +
+    '<input id="sbDt" type="range" min="10" max="3600" step="10" />' +
+    '<input id="sbDtNum" type="number" min="10" max="3600" step="10" /></div></div>' +
+    '<div class="grupo"><span class="titulo">Pasos</span><div class="fila">' +
+    '<input id="sbPasos" type="range" min="50" max="20000" step="50" />' +
+    '<input id="sbPasosNum" type="number" min="50" max="20000" step="50" /></div></div>' +
+    '<div class="grupo"><button id="sbLanzar">Lanzar</button><span id="sbEstado" role="status"></span></div>'
 
-  const enVivo = (id: string): void => {
-    const input = contenedor.querySelector(`#${id}`) as HTMLInputElement
-    const etiqueta = contenedor.querySelector(`#${id}Val`) as HTMLElement
-    input.addEventListener('input', () => {
-      etiqueta.textContent = id === 'sbMasa' ? Number(Math.pow(10, Number(input.value))).toExponential(1) : input.value
-    })
-  }
-  for (const id of ['sbMasa', 'sbVx', 'sbVy', 'sbDt', 'sbPasos']) enVivo(id)
+  const identico = (v: number): number => v
+  parSincronizado(contenedor, 'sbMasa', 'sbMasaNum', (v) => Math.pow(10, v), (v) => Math.log10(v))
+  parSincronizado(contenedor, 'sbVx', 'sbVxNum', identico, identico)
+  parSincronizado(contenedor, 'sbVy', 'sbVyNum', identico, identico)
+  parSincronizado(contenedor, 'sbDt', 'sbDtNum', identico, identico)
+  parSincronizado(contenedor, 'sbPasos', 'sbPasosNum', identico, identico)
   const sel = contenedor.querySelector('#sbCuerpo') as HTMLSelectElement
   const alCambiarCuerpo = (): void => refrescar(contenedor, cuerpos)
   sel.addEventListener('change', alCambiarCuerpo)
+  // dt/pasos iniciales (del escenario) en ambos controles.
+  const sembrar = (idRango: string, idNum: string, v: number): void => {
+    ;(contenedor.querySelector(`#${idRango}`) as HTMLInputElement).value = String(v)
+    ;(contenedor.querySelector(`#${idNum}`) as HTMLInputElement).value = String(v)
+  }
+  sembrar('sbDt', 'sbDtNum', dt)
+  sembrar('sbPasos', 'sbPasosNum', pasos)
   refrescar(contenedor, cuerpos)
 
   const btn = contenedor.querySelector('#sbLanzar') as HTMLButtonElement

@@ -8,13 +8,34 @@
     <style>
       html, body { margin: 0; height: 100%; background: #0a0a18; color: #eee; font-family: sans-serif; }
       #app { display: flex; flex-direction: column; height: 100vh; }
-      #barra { display: flex; gap: 8px; padding: 8px 12px; align-items: center; background: #12122a; }
-      #barra button { background: #2a2a5a; color: #fff; border: 1px solid #555; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
-      #sandbox { display: flex; gap: 10px; padding: 6px 12px; align-items: center; flex-wrap: wrap; background: #0e0e22; font-size: 13px; }
-      #sandbox label { display: flex; gap: 4px; align-items: center; }
-      #sandbox input[type=range] { width: 110px; }
-      #sandbox button { background: #1a5a2a; color: #fff; border: 1px solid #555; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
-      #sbEstado { color: #8fd08f; }
+      #barra { display: flex; gap: 10px; padding: 6px 12px; align-items: center; background: rgba(18, 18, 42, 0.92); font-size: 13px; }
+      #barra button { background: #2a2a5a; color: #fff; border: 1px solid #555; border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+      #barra button:hover { background: #3a3a7a; }
+      #btnPausa { min-width: 86px; }
+      #vel { width: 90px; accent-color: #7DE2FC; }
+      #tiempo { color: #7DE2FC; font-variant-numeric: tabular-nums; min-width: 86px; }
+      #perfil { color: #999; font-size: 12px; }
+      #sandbox {
+        position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 10;
+        display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; justify-content: center;
+        background: rgba(14, 14, 34, 0.92); backdrop-filter: blur(8px);
+        border: 1px solid #33335a; border-radius: 14px; padding: 10px 16px;
+        font-size: 12px; transition: transform 0.25s ease, opacity 0.25s ease;
+        max-width: calc(100vw - 24px);
+      }
+      #sandbox.cerrado { transform: translate(-50%, 150%); opacity: 0; pointer-events: none; }
+      #sandbox .grupo { display: flex; flex-direction: column; gap: 4px; }
+      #sandbox .titulo { color: #7DE2FC; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+      #sandbox .fila { display: flex; gap: 6px; align-items: center; }
+      #sandbox input[type=range] { width: 96px; accent-color: #7DE2FC; }
+      #sandbox input[type=number], #sandbox select {
+        width: 88px; background: #1a1a3a; color: #eee; font-size: 12px;
+        border: 1px solid #555; border-radius: 6px; padding: 3px 6px;
+      }
+      #sandbox select { width: auto; max-width: 110px; }
+      #sbLanzar { background: #1a5a2a; color: #fff; border: 1px solid #555; border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+      #sbLanzar:hover { background: #237a37; }
+      #sbEstado { color: #8fd08f; font-size: 12px; min-height: 14px; }
       #escena { flex: 1; width: 100%; min-height: 300px; touch-action: none; }
       #aviso { padding: 6px 12px; font-size: 13px; color: #ffb; }
       table { border-collapse: collapse; font-size: 13px; margin: 8px 12px; }
@@ -27,7 +48,9 @@
         <strong>Fractal</strong>
         <button id="btnPausa">Pausar</button>
         <label>Velocidad <input id="vel" type="range" min="0.1" max="10" step="0.1" value="1" /></label>
+        <span id="tiempo" title="Tiempo simulado">—</span>
         <span id="perfil"></span>
+        <button id="btnSandbox" title="Mostrar/ocultar panel sandbox">Sandbox</button>
       </div>
       <div id="sandbox" aria-label="Panel sandbox: edita parámetros y lanza simulaciones"></div>
       <canvas id="escena" tabindex="0" aria-label="Vista 3D del sistema solar. Flechas rotan, más y menos acercan, R resetea."></canvas>
