@@ -550,6 +550,9 @@ export async function montarUltra(
       escalaFuente = f?.escala ?? 1
       tiempoFuente = 0
       limiteBucle = detectarBucle()
+      // Sin esto, la estela vieja cruza la pantalla hasta la nueva
+      // trayectoria y parece teletransporte.
+      for (const e of estelas) e.puntos.length = 0
     },
     leerSeleccion: () => seleccionado,
     leerTiempo: () => spinSim,

@@ -215,6 +215,7 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
   const estelas: Estela[] = []
   const bufEstela = gl.createBuffer()!
   let tikEstela = 0
+  let estelasDe = -1
 
   let visuales = aVisual({
     id: 'demo', nombre: 'Demo', descripcion: '', cuerpos: [
@@ -255,6 +256,11 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
     gl.enable(gl.DEPTH_TEST)
 
     const vp = multiplicar(matrizProyeccion(w / h), matrizVista(cam))
+    // Si cambió el escenario, las estelas viejas mentirían: se limpian.
+    if (estelasDe !== visuales.length) {
+      estelasDe = visuales.length
+      estelas.length = 0
+    }
     while (estelas.length < visuales.length) estelas.push(crearEstela(240))
     gl.enable(gl.BLEND)
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
