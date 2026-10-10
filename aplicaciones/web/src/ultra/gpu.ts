@@ -2,6 +2,7 @@
 import { camaraInicial, conectarControles, invertir, matrizProyeccion, matrizVista, multiplicar, ojoDeCamara, rayoDesdePantalla, tocaEsfera, type EstadoCamara } from '../camara'
 import { aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, tipoPlaneta, urlTextura, type CuerpoVisual } from '../escenario'
 import type { FuenteEstados } from '../api'
+import { detectarLimiteBucle, interpolarBloque } from '../binario'
 import planetaWGSL from './sombreadores/planeta.wgsl?raw'
 import orbitaWGSL from './sombreadores/orbita.wgsl?raw'
 import puntosWGSL from './sombreadores/puntos.wgsl?raw'
@@ -347,33 +348,7 @@ export async function montarUltra(
   let limiteBucle = 0
 
   function detectarBucle(): number {
-    const lista = bloques
-    if (!lista || lista.length < 3 || visuales.length < 2) {
-      return lista ? lista.length - 1 : 0
-    }
-    // Planos candidatos (índices dx,dy en el bloque): la órbita puede vivir
-    // en cualquiera según el escenario (dos_cuerpos usa XY).
-    const planos: Array<[number, number, number, number]> = [
-      [1, 2, 7, 8],
-      [1, 3, 7, 9],
-      [2, 3, 8, 9],
-    ]
-    const angulo = (b: Float32Array, p: [number, number, number, number]): number =>
-      Math.atan2(b[p[3]] - b[p[1]], b[p[2]] - b[p[0]])
-    const estado = planos.map((p) => ({ p, previo: angulo(lista[0], p), acum: 0 }))
-    for (let k = 1; k < lista.length; k++) {
-      const b = lista[k]
-      for (const s of estado) {
-        const a = angulo(b, s.p)
-        let d = a - s.previo
-        if (d > Math.PI) d -= 2 * Math.PI
-        if (d < -Math.PI) d += 2 * Math.PI
-        s.acum += d
-        s.previo = a
-        if (Math.abs(s.acum) >= 2 * Math.PI - 0.05) return k
-      }
-    }
-    return lista.length - 1
+    return detectarLimiteBucle(bloques ?? [], visuales.length)
   }
 
   function rangoFuente(): { ini: number; fin: number } {
@@ -388,22 +363,14 @@ export async function montarUltra(
   /** Escribe en `c` los centros interpolados del instante `t` (segundos sim). */
   function centrosServidor(c: Float32Array, t: number): void {
     if (!bloques) return
-    const tope = Math.min(limiteBucle, bloques.length - 1)
-    let k = 0
-    while (k + 1 < tope && bloques[k + 1][0] <= t) k++
-    const a = bloques[k]
-    const b = bloques[Math.min(k + 1, tope)]
-    const tramo = b[0] - a[0]
-    const alpha = tramo > 0 ? Math.min(Math.max((t - a[0]) / tramo, 0), 1) : 0
+    const b = interpolarBloque(bloques, limiteBucle, t)
+    if (!b) return
     visuales.forEach((_v, i) => {
       const base = 1 + i * 6
-      const x = a[base] + (b[base] - a[base]) * alpha
-      const y = a[base + 1] + (b[base + 1] - a[base + 1]) * alpha
-      const z = a[base + 2] + (b[base + 2] - a[base + 2]) * alpha
       // Misma convención que normalizarPosiciones: [x, z, y] × escala.
-      c[i * 4] = x * escalaFuente
-      c[i * 4 + 1] = z * escalaFuente
-      c[i * 4 + 2] = y * escalaFuente
+      c[i * 4] = b[base] * escalaFuente
+      c[i * 4 + 1] = b[base + 2] * escalaFuente
+      c[i * 4 + 2] = b[base + 1] * escalaFuente
     })
   }
 
@@ -547,17 +514,7 @@ export async function montarUltra(
       const span = fin - ini
       if (span <= 0) return null
       const t = ini + ((tiempoFuente % span) + span) % span
-      const tope = Math.min(limiteBucle, bloques.length - 1)
-      let k = 0
-      while (k + 1 < tope && bloques[k + 1][0] <= t) k++
-      const a = bloques[k]
-      const b = bloques[Math.min(k + 1, tope)]
-      const tramo = b[0] - a[0]
-      const alpha = tramo > 0 ? Math.min(Math.max((t - a[0]) / tramo, 0), 1) : 0
-      const salida = new Float32Array(a.length)
-      salida[0] = t
-      for (let i = 1; i < a.length; i++) salida[i] = a[i] + (b[i] - a[i]) * alpha
-      return salida
+      return interpolarBloque(bloques, limiteBucle, t)
     },
     leerPosicionesActuales: () => {
       // Deshace el mapeo mundo [x*e, z*e, y*e] → SI. En demo la escala es

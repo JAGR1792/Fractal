@@ -38,9 +38,9 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   const dt = esc?.parametros?.dt ?? 600
   const pasos = esc?.parametros?.pasos ?? 3900
 
-  // Fuente del servidor (solo ULTRA por ahora): no bloquea si el API cae.
+  // Fuente del servidor (ULTRA y LITE): no bloquea si el API cae.
   let fuente: FuenteEstados | null = null
-  if (perfil === 'ultra' && vis.length > 0) {
+  if (vis.length > 0) {
     fuente = await probarFuente(vis, dt, pasos)
     if (fuente) console.info(`[fractal] física del servidor: ${fuente.bloques.length} fotogramas`)
   }
@@ -50,7 +50,7 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     control = await montarUltra(lienzo, '/datos/dos_cuerpos.json', fuente)
   } else {
     const { montarLite } = await import('./lite/webgl2_minimo')
-    control = montarLite(lienzo)
+    control = montarLite(lienzo, '/datos/dos_cuerpos.json', fuente)
   }
 
   const btn = document.getElementById('btnPausa') as HTMLButtonElement | null
@@ -125,8 +125,7 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
         panel?.fijarEstado('sin servidor (demo local)')
       }
     })
-    if (perfil !== 'ultra') panel?.fijarEstado('LITE: demo local')
-    else if (fuente) panel?.fijarEstado(`listo: ${fuente.bloques.length} fotogramas`)
+    if (fuente) panel?.fijarEstado(`listo: ${fuente.bloques.length} fotogramas`)
     else panel?.fijarEstado('sin servidor (demo local)')
 
     // Picking 3D → sandbox: clic en un planeta lo selecciona en el panel.
