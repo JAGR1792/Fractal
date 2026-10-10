@@ -67,7 +67,7 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   const reloj = document.getElementById('tiempo')
   let encadenando = false
   let base = vis
-  let params = { dt, pasos }
+  let params = { dt, pasos, suavizado: 0 }
   let panel: ReturnType<typeof montarSandbox> | null = null
   setInterval(async () => {
     if (reloj) {
@@ -87,7 +87,7 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     encadenando = true
     panel?.fijarEstado('continuando…')
     const siguientes = visualesDesdeBloque(base, ahora)
-    const nueva = await probarFuente(siguientes, params.dt, params.pasos)
+    const nueva = await probarFuente(siguientes, params.dt, params.pasos, params.suavizado)
     if (nueva) {
       fuente = nueva
       base = siguientes
@@ -119,11 +119,11 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
       const vuelo = control.leerPosicionesActuales?.() ?? null
       const puntoDePartida = vuelo ? visualesConPosiciones(vis, vuelo) : vis
       const editados = aplicarEdicion(puntoDePartida, ed)
-      const nueva = await probarFuente(editados, ed.dt, ed.pasos)
+      const nueva = await probarFuente(editados, ed.dt, ed.pasos, ed.suavizado)
       if (nueva && control.fijarFuente) {
         fuente = nueva
         base = editados
-        params = { dt: ed.dt, pasos: ed.pasos }
+        params = { dt: ed.dt, pasos: ed.pasos, suavizado: ed.suavizado }
         control.fijarFuente(nueva)
         panel?.fijarEstado(`listo: ${nueva.bloques.length} fotogramas`)
       } else {

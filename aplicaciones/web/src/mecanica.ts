@@ -50,3 +50,42 @@ export function formatearDistancia(m: number): string {
   if (km < 1e6) return `${(km / 1000).toFixed(1)}k km`
   return `${(km / 1e6).toFixed(2)}M km`
 }
+
+/** Impacto entre dos cuerpos: índices y punto medio (mundo). */
+export interface Impacto {
+  a: number
+  b: number
+  punto: [number, number, number]
+}
+
+/**
+ * Detecta pares cuya distancia es menor que `(r1+r2) × factor`.
+ * O(N²) como la física; N es pequeño en el sandbox.
+ */
+export function detectarImpactos(
+  centros: Array<[number, number, number]>,
+  radios: number[],
+  factor = 1.5,
+): Impacto[] {
+  const salida: Impacto[] = []
+  for (let i = 0; i < centros.length; i++) {
+    for (let j = i + 1; j < centros.length; j++) {
+      const dx = centros[j][0] - centros[i][0]
+      const dy = centros[j][1] - centros[i][1]
+      const dz = centros[j][2] - centros[i][2]
+      const d = Math.hypot(dx, dy, dz)
+      if (d < ((radios[i] ?? 0) + (radios[j] ?? 0)) * factor) {
+        salida.push({
+          a: i,
+          b: j,
+          punto: [
+            (centros[i][0] + centros[j][0]) / 2,
+            (centros[i][1] + centros[j][1]) / 2,
+            (centros[i][2] + centros[j][2]) / 2,
+          ],
+        })
+      }
+    }
+  }
+  return salida
+}

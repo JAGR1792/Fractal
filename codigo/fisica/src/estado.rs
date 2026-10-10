@@ -4,7 +4,7 @@
 //! La simulación produce una secuencia de estados.
 
 use crate::cuerpo::Cuerpo;
-use crate::integrador::paso_velocity_verlet;
+use crate::integrador::paso_velocity_verlet_con;
 
 /// Estado instantáneo del sistema en un tiempo dado.
 ///
@@ -74,6 +74,44 @@ impl Estado {
 /// assert_eq!(historial.len(), 5); // t=0, 6h, 12h, 18h, 24h
 /// ```
 pub fn simular(cuerpos: &[Cuerpo], dt: f64, pasos: usize, cada_n_pasos: usize) -> Vec<Estado> {
+    simular_con(cuerpos, dt, pasos, cada_n_pasos, 0.0)
+}
+
+/// Simulación completa con suavizado gravitacional.
+///
+/// Igual que [`simular`], con `suavizado` ε en metros (ver
+/// [`calcular_aceleraciones_suavizadas`][crate::gravedad::calcular_aceleraciones_suavizadas]).
+///
+/// # Argumentos
+///
+/// * `cuerpos` — estado inicial del sistema
+/// * `dt` — paso temporal en segundos
+/// * `pasos` — número total de pasos a simular
+/// * `cada_n_pasos` — cada cuántos pasos registrar un estado (1 = todos)
+/// * `suavizado` — longitud ε en metros (≥ 0)
+///
+/// # Ejemplo
+///
+/// ```
+/// use fractal_fisica::cuerpo::Cuerpo;
+/// use fractal_fisica::estado::simular_con;
+/// use fractal_fisica::vector::Vec3;
+///
+/// let cuerpos = vec![
+///     Cuerpo::nuevo("sol", "Sol", 1.989e30, 6.957e8, Vec3::cero(), Vec3::cero()),
+///     Cuerpo::nuevo("t", "T", 5.972e24, 6.371e6,
+///         Vec3::new(1.496e11, 0.0, 0.0), Vec3::new(0.0, 29780.0, 0.0)),
+/// ];
+/// let historial = simular_con(&cuerpos, 3600.0, 24, 6, 1e6);
+/// assert_eq!(historial.len(), 5);
+/// ```
+pub fn simular_con(
+    cuerpos: &[Cuerpo],
+    dt: f64,
+    pasos: usize,
+    cada_n_pasos: usize,
+    suavizado: f64,
+) -> Vec<Estado> {
     assert!(cada_n_pasos > 0, "cada_n_pasos debe ser al menos 1");
 
     let mut estado_actual = cuerpos.to_vec();
@@ -83,7 +121,7 @@ pub fn simular(cuerpos: &[Cuerpo], dt: f64, pasos: usize, cada_n_pasos: usize) -
     historial.push(Estado::nuevo(0.0, &estado_actual));
 
     for paso in 1..=pasos {
-        paso_velocity_verlet(&mut estado_actual, dt);
+        paso_velocity_verlet_con(&mut estado_actual, dt, suavizado);
 
         if paso % cada_n_pasos == 0 {
             historial.push(Estado::nuevo(paso as f64 * dt, &estado_actual));
@@ -122,5 +160,23 @@ mod tests {
         let cuerpos = vec![Cuerpo::nuevo("a", "A", 1.0, 1.0, Vec3::cero(), Vec3::cero())];
         let historial = simular(&cuerpos, 1.0, 10, 1);
         assert_eq!(historial.len(), 11); // t=0 + 10 pasos
+    }
+
+    #[test]
+    fn simular_con_suavizado_cero_igual_que_simular() {
+        let cuerpos = vec![
+            Cuerpo::nuevo("sol", "Sol", 1.989e30, 6.957e8, Vec3::cero(), Vec3::cero()),
+            Cuerpo::nuevo(
+                "t",
+                "T",
+                5.972e24,
+                6.371e6,
+                Vec3::new(1.496e11, 0.0, 0.0),
+                Vec3::new(0.0, 29780.0, 0.0),
+            ),
+        ];
+        let a = simular(&cuerpos, 3600.0, 24, 6);
+        let b = simular_con(&cuerpos, 3600.0, 24, 6, 0.0);
+        assert_eq!(a, b);
     }
 }

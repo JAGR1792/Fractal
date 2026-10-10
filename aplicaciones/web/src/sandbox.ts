@@ -12,6 +12,8 @@ export interface EdicionSandbox {
   vy: number
   dt: number
   pasos: number
+  /** Suavizado gravitacional ε en metros (0 = Newton puro). */
+  suavizado: number
 }
 
 /** Clona los visuales aplicando la edición (puro, testeable). */
@@ -33,6 +35,7 @@ function leerEdicion(raiz: HTMLElement): EdicionSandbox {
     vy: num('sbVyNum'),
     dt: num('sbDtNum'),
     pasos: Math.round(num('sbPasosNum')),
+    suavizado: num('sbSuavNum'),
   }
 }
 
@@ -105,10 +108,14 @@ export function montarSandbox(
     '<div class="grupo"><span class="titulo">Pasos</span><div class="fila">' +
     '<input id="sbPasos" type="range" min="50" max="20000" step="50" />' +
     '<input id="sbPasosNum" type="number" min="50" max="20000" step="50" /></div></div>' +
+    '<div class="grupo"><span class="titulo">Suavizado (m)</span><div class="fila">' +
+    '<input id="sbSuav" type="range" min="0" max="7" step="0.1" />' +
+    '<input id="sbSuavNum" type="number" min="0" max="1e7" step="any" /></div></div>' +
     '<div class="grupo"><button id="sbLanzar">Lanzar</button><span id="sbEstado" role="status"></span></div>'
 
   const identico = (v: number): number => v
   parSincronizado(contenedor, 'sbMasa', 'sbMasaNum', (v) => Math.pow(10, v), (v) => Math.log10(v))
+  parSincronizado(contenedor, 'sbSuav', 'sbSuavNum', (v) => (v <= 0 ? 0 : Math.pow(10, v)), (v) => (v <= 0 ? 0 : Math.log10(v)))
   parSincronizado(contenedor, 'sbVx', 'sbVxNum', identico, identico)
   parSincronizado(contenedor, 'sbVy', 'sbVyNum', identico, identico)
   parSincronizado(contenedor, 'sbDt', 'sbDtNum', identico, identico)
@@ -123,6 +130,7 @@ export function montarSandbox(
   }
   sembrar('sbDt', 'sbDtNum', dt)
   sembrar('sbPasos', 'sbPasosNum', pasos)
+  sembrar('sbSuav', 'sbSuavNum', 0)
   refrescar(contenedor, cuerpos)
 
   const btn = contenedor.querySelector('#sbLanzar') as HTMLButtonElement

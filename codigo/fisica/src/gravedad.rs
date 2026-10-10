@@ -63,8 +63,52 @@ use crate::vector::Vec3;
 /// assert!(a[1].norma() > 0.0);
 /// ```
 pub fn calcular_aceleraciones(cuerpos: &[Cuerpo]) -> Vec<Vec3> {
+    calcular_aceleraciones_suavizadas(cuerpos, 0.0)
+}
+
+/// Calcula aceleraciones con suavizado gravitacional (softening).
+///
+/// El suavizado evita la singularidad en encuentros cercanos, que con Verlet
+/// y `dt` grande eyecta cuerpos con energía falsa:
+///
+/// ```text
+/// a_i += G * m_j / (|r_ij|² + ε²)^1.5 * r_ij
+/// ```
+///
+/// Con `ε = 0` es Newton puro. Un `ε` del orden del radio de los cuerpos
+/// doma los hondazos sin cambiar las órbitas amplias.
+///
+/// # Argumentos
+///
+/// * `cuerpos` — slice de cuerpos con masa, posición y velocidad actual
+/// * `suavizado` — longitud ε en metros (debe ser ≥ 0 y finita)
+///
+/// # Panics
+///
+/// Si `suavizado` es negativo, infinito o NaN.
+///
+/// # Ejemplo
+///
+/// ```
+/// use fractal_fisica::cuerpo::Cuerpo;
+/// use fractal_fisica::gravedad::calcular_aceleraciones_suavizadas;
+/// use fractal_fisica::vector::Vec3;
+///
+/// let cuerpos = vec![
+///     Cuerpo::nuevo("a", "A", 1e30, 1e8, Vec3::cero(), Vec3::cero()),
+///     Cuerpo::nuevo("b", "B", 1e24, 1e6, Vec3::new(1e11, 0.0, 0.0), Vec3::cero()),
+/// ];
+/// let a = calcular_aceleraciones_suavizadas(&cuerpos, 1e6);
+/// assert_eq!(a.len(), 2);
+/// ```
+pub fn calcular_aceleraciones_suavizadas(cuerpos: &[Cuerpo], suavizado: f64) -> Vec<Vec3> {
+    assert!(
+        suavizado >= 0.0 && suavizado.is_finite(),
+        "el suavizado debe ser ≥ 0 y finito"
+    );
     let n = cuerpos.len();
     let mut aceleraciones = vec![Vec3::cero(); n];
+    let e2 = suavizado * suavizado;
 
     for i in 0..n {
         for j in 0..n {
@@ -77,12 +121,13 @@ pub fn calcular_aceleraciones(cuerpos: &[Cuerpo]) -> Vec<Vec3> {
             let distancia = r_ij.norma();
 
             // evitar división por cero en colisiones exactas
-            if distancia < 1.0 {
+            if distancia < 1.0 && e2 == 0.0 {
                 continue;
             }
 
-            // a_i += G * m_j / |r_ij|³ * r_ij
-            let factor = G * cuerpos[j].masa / (distancia * distancia * distancia);
+            // a_i += G * m_j / (d² + ε²)^1.5 * r_ij
+            let d2 = distancia * distancia + e2;
+            let factor = G * cuerpos[j].masa / (d2 * d2.sqrt());
             aceleraciones[i] += r_ij.escalar(factor);
         }
     }
@@ -129,5 +174,36 @@ mod tests {
         // a_a * m_a = -a_b * m_b  (conservación de momento)
         let momento_total = a[0].escalar(cuerpos[0].masa) + a[1].escalar(cuerpos[1].masa);
         assert!(momento_total.norma() < 1e-10);
+    }
+
+    #[test]
+    fn suavizado_cero_es_newton_puro() {
+        let cuerpos = vec![
+            Cuerpo::nuevo("a", "A", 1e30, 1e8, Vec3::cero(), Vec3::cero()),
+            Cuerpo::nuevo("b", "B", 1e24, 1e6, Vec3::new(1e11, 0.0, 0.0), Vec3::cero()),
+        ];
+        let puras = calcular_aceleraciones(&cuerpos);
+        let suaves = calcular_aceleraciones_suavizadas(&cuerpos, 0.0);
+        assert_eq!(puras, suaves);
+    }
+
+    #[test]
+    fn suavizado_doma_encuentros_cercanos() {
+        let cuerpos = vec![
+            Cuerpo::nuevo("a", "A", 1e30, 1e8, Vec3::cero(), Vec3::cero()),
+            Cuerpo::nuevo("b", "B", 1e24, 1e6, Vec3::new(10.0, 0.0, 0.0), Vec3::cero()),
+        ];
+        let pura = calcular_aceleraciones(&cuerpos)[1].norma();
+        let suave = calcular_aceleraciones_suavizadas(&cuerpos, 1e6)[1].norma();
+        assert!(suave.is_finite());
+        assert!(suave < pura);
+    }
+
+    #[test]
+    #[should_panic(expected = "el suavizado debe ser")]
+    fn suavizado_negativo_es_panico() {
+        let cuerpos =
+            vec![Cuerpo::nuevo("a", "A", 1.0, 1.0, Vec3::cero(), Vec3::cero())];
+        let _ = calcular_aceleraciones_suavizadas(&cuerpos, -1.0);
     }
 }

@@ -6,6 +6,8 @@
 import { aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, tipoPlaneta, urlTextura } from '../escenario'
 import { camaraInicial, conectarControles, matrizProyeccion, matrizVista, multiplicar, type EstadoCamara } from '../camara'
 import { crearEstela, empujarEstela, generarEstrellas, type Estela } from '../estelas'
+import { crearSistema, actualizar as actualizarChispas, aIntercalado as chispasIntercaladas, explotar as explotarChispas, puedeExplotar as puedeExplotarChispas } from '../particulas'
+import { detectarImpactos } from '../mecanica'
 import { detectarLimiteBucle, interpolarBloque } from '../binario'
 import type { FuenteEstados } from '../api'
 
@@ -65,14 +67,18 @@ uniform vec3 uColor; uniform float uAlpha; in float vA; out vec4 o;
 void main(){ o=vec4(uColor, vA*uAlpha); }`
 
 const VS_PTS = `#version 300 es
+precision mediump float;
 layout(location=0) in vec3 p;
+layout(location=1) in float b;
+layout(location=2) in vec3 col;
 uniform mat4 uVP;
-void main(){ gl_Position=uVP*vec4(p,1.0); gl_PointSize=2.0; }`
+out float vB; out vec3 vC;
+void main(){ vB = b; vC = col; gl_Position=uVP*vec4(p,1.0); gl_PointSize=3.0; }`
 
 const FS_PTS = `#version 300 es
 precision mediump float;
-uniform vec3 uColor; out vec4 o;
-void main(){ o=vec4(uColor,1.0); }`
+in float vB; in vec3 vC; out vec4 o;
+void main(){ o=vec4(vC*vB, vB); }`
 
 function programa(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
   const comp = (t: number, src: string): WebGLShader => {
@@ -176,7 +182,6 @@ export function montarLite(
   const locColorOrb = gl.getUniformLocation(progOrb, 'uColor')
   const locAlphaOrb = gl.getUniformLocation(progOrb, 'uAlpha')
   const locVPPts = gl.getUniformLocation(progPts, 'uVP')
-  const locColorPts = gl.getUniformLocation(progPts, 'uColor')
 
   const esf = esferaCPU()
   const bufPos = gl.createBuffer()!
@@ -213,15 +218,28 @@ export function montarLite(
 
   // Estrellas fijas + estelas recientes por cuerpo.
   const posEstrellas = generarEstrellas(800, 7, 900)
+  const arrEstrellas = new Float32Array(800 * 7)
+  for (let i = 0; i < 800; i++) {
+    const b = 0.3 + 0.7 * (((i * 2654435761) >>> 0) / 4294967296)
+    arrEstrellas.set([posEstrellas[i * 3], posEstrellas[i * 3 + 1], posEstrellas[i * 3 + 2], b, 0.85, 0.9, 1.0], i * 7)
+  }
   const bufPts = gl.createBuffer()!
   gl.bindBuffer(gl.ARRAY_BUFFER, bufPts)
-  gl.bufferData(gl.ARRAY_BUFFER, posEstrellas, gl.STATIC_DRAW)
+  gl.bufferData(gl.ARRAY_BUFFER, arrEstrellas, gl.STATIC_DRAW)
   const vaoPts = gl.createVertexArray()!
   gl.bindVertexArray(vaoPts)
   gl.bindBuffer(gl.ARRAY_BUFFER, bufPts)
   gl.enableVertexAttribArray(0)
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0)
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0)
+  gl.enableVertexAttribArray(1)
+  gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 28, 12)
+  gl.enableVertexAttribArray(2)
+  gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 28, 16)
   gl.bindVertexArray(null)
+  // Chispas de explosión (mismo layout intercalado, buffer dinámico).
+  const bufChispas = gl.createBuffer()!
+  const chispas = crearSistema(800)
+  const ultimasChispas = new Map<string, number>()
   const estelas: Estela[] = []
   const bufEstela = gl.createBuffer()!
   let tikEstela = 0
@@ -338,10 +356,36 @@ export function montarLite(
     // Estrellas: un draw de puntos fijos.
     gl.useProgram(progPts)
     gl.uniformMatrix4fv(locVPPts, false, vp)
-    gl.uniform3f(locColorPts, 0.85, 0.9, 1.0)
     gl.bindVertexArray(vaoPts)
     gl.drawArrays(gl.POINTS, 0, 800)
     gl.bindVertexArray(null)
+
+    // Explosiones por proximidad (radios visuales) con cooldown.
+    if (!pausado) {
+      const mundo: Array<[number, number, number]> = pos.map((p) => [p[0], p[1], p[2]])
+      const ahora = performance.now()
+      for (const golpe of detectarImpactos(mundo, visuales.map((v) => v.radioVisual))) {
+        const clave = `${Math.min(golpe.a, golpe.b)}-${Math.max(golpe.a, golpe.b)}`
+        if (puedeExplotarChispas(ultimasChispas, clave, ahora, 3000)) {
+          explotarChispas(chispas, golpe.punto, 150, 6)
+        }
+      }
+      actualizarChispas(chispas, dtS)
+    }
+    const chispasArr = chispasIntercaladas(chispas)
+    if (chispasArr.length > 0) {
+      gl.useProgram(progPts)
+      gl.uniformMatrix4fv(locVPPts, false, vp)
+      gl.bindBuffer(gl.ARRAY_BUFFER, bufChispas)
+      gl.bufferData(gl.ARRAY_BUFFER, chispasArr, gl.DYNAMIC_DRAW)
+      gl.enableVertexAttribArray(0)
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0)
+      gl.enableVertexAttribArray(1)
+      gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 28, 12)
+      gl.enableVertexAttribArray(2)
+      gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 28, 16)
+      gl.drawArrays(gl.POINTS, 0, chispasArr.length / 7)
+    }
 
     // Planetas: un draw por cuerpo
     gl.useProgram(prog)

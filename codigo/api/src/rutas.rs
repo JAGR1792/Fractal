@@ -20,7 +20,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use fractal_fisica::estado::simular;
+use fractal_fisica::estado::simular_con;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -90,9 +90,12 @@ fn lanzar_calculo(almacen: Almacen, id: Uuid, peticion: PeticionSimulacion) {
     tokio::spawn(async move {
         almacen.marcar_corriendo(&id).await;
         let cuerpos = peticion.cuerpos.clone();
-        let (dt, pasos, cada_n) = (peticion.dt, peticion.pasos, peticion.cada_n);
-        let resultado =
-            tokio::task::spawn_blocking(move || simular(&cuerpos, dt, pasos, cada_n)).await;
+        let (dt, pasos, cada_n, suavizado) =
+            (peticion.dt, peticion.pasos, peticion.cada_n, peticion.suavizado);
+        let resultado = tokio::task::spawn_blocking(move || {
+            simular_con(&cuerpos, dt, pasos, cada_n, suavizado)
+        })
+        .await;
         match resultado {
             Ok(historial) => almacen.completar(&id, historial).await,
             Err(fallo) => almacen.fallar(&id, &format!("el cálculo fue cancelado: {fallo}")).await,

@@ -30,7 +30,14 @@ interface CuerpoApi {
 }
 
 /** Convierte cuerpos visuales (tuplas) al JSON del API (objetos xyz). */
-export function aPeticion(visuales: CuerpoVisual[], dt: number, pasos: number, cadaN: number): { cuerpos: CuerpoApi[]; dt: number; pasos: number; cada_n: number } {  return {
+export function aPeticion(
+  visuales: CuerpoVisual[],
+  dt: number,
+  pasos: number,
+  cadaN: number,
+  suavizado = 0,
+): { cuerpos: CuerpoApi[]; dt: number; pasos: number; cada_n: number; suavizado: number } {
+  return {
     cuerpos: visuales.map((c) => ({
       id: c.id,
       nombre: c.nombre,
@@ -42,6 +49,7 @@ export function aPeticion(visuales: CuerpoVisual[], dt: number, pasos: number, c
     dt,
     pasos,
     cada_n: cadaN,
+    suavizado,
   }
 }
 
@@ -85,7 +93,12 @@ function esperar(ms: number): Promise<void> {
  * Intenta traer fotogramas del servidor para los visuales dados.
  * Devuelve `null` si el API no responde (demo local como fallback).
  */
-export async function probarFuente(visuales: CuerpoVisual[], dt: number, pasos: number): Promise<FuenteEstados | null> {
+export async function probarFuente(
+  visuales: CuerpoVisual[],
+  dt: number,
+  pasos: number,
+  suavizado = 0,
+): Promise<FuenteEstados | null> {
   const base = baseApi()
   try {
     const ctrl = new AbortController()
@@ -102,7 +115,7 @@ export async function probarFuente(visuales: CuerpoVisual[], dt: number, pasos: 
     const crear = await fetch(`${base}/api/v1/simulaciones`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(aPeticion(visuales, dt, pasosFx, cadaN)),
+      body: JSON.stringify(aPeticion(visuales, dt, pasosFx, cadaN, suavizado)),
     })
     if (crear.status !== 202) return null
     const { id } = (await crear.json()) as { id: string }

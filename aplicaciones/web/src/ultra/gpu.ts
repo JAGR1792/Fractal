@@ -7,6 +7,8 @@ import planetaWGSL from './sombreadores/planeta.wgsl?raw'
 import orbitaWGSL from './sombreadores/orbita.wgsl?raw'
 import puntosWGSL from './sombreadores/puntos.wgsl?raw'
 import { aSegmentos, crearEstela, empujarEstela, generarEstrellas, type Estela } from '../estelas'
+import { actualizar, aIntercalado, crearSistema, explotar, puedeExplotar } from '../particulas'
+import { detectarImpactos } from '../mecanica'
 
 // Usos de textura con nombre (no hex de memoria): GPUTextureUsage del navegador.
 const TU: any = (globalThis as any).GPUTextureUsage ?? { TEXTURE_BINDING: 0x10, COPY_DST: 0x08, RENDER_ATTACHMENT: 0x40 }
@@ -242,26 +244,29 @@ export async function montarUltra(
   const modPuntos: any = device.createShaderModule({ code: puntosWGSL })
   const pipePuntos: any = device.createRenderPipeline({
     layout: 'auto',
-    vertex: { module: modPuntos, entryPoint: 'vs', buffers: [{ arrayStride: 16, attributes: [
+    vertex: { module: modPuntos, entryPoint: 'vs', buffers: [{ arrayStride: 28, attributes: [
       { shaderLocation: 0, offset: 0, format: 'float32x3' },
       { shaderLocation: 1, offset: 12, format: 'float32' },
+      { shaderLocation: 2, offset: 16, format: 'float32x3' },
     ]}]},
-    fragment: { module: modPuntos, entryPoint: 'fs', targets: [{ format: formato }] },
+    fragment: { module: modPuntos, entryPoint: 'fs', targets: [{ format: formato, blend: { color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' }, alpha: { srcFactor: 'one', dstFactor: 'one' } } }] },
     primitive: { topology: 'point-list' },
     depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth24plus' },
   })
   const posEstrellas = generarEstrellas(1500, 1234, 900)
-  const arrEstrellas = new Float32Array(1500 * 4)
+  const arrEstrellas = new Float32Array(1500 * 7)
   for (let i = 0; i < 1500; i++) {
-    arrEstrellas[i * 4] = posEstrellas[i * 3]
-    arrEstrellas[i * 4 + 1] = posEstrellas[i * 3 + 1]
-    arrEstrellas[i * 4 + 2] = posEstrellas[i * 3 + 2]
-    arrEstrellas[i * 4 + 3] = 0.3 + 0.7 * (((i * 2654435761) >>> 0) / 4294967296)
+    const b = 0.3 + 0.7 * (((i * 2654435761) >>> 0) / 4294967296)
+    arrEstrellas.set([posEstrellas[i * 3], posEstrellas[i * 3 + 1], posEstrellas[i * 3 + 2], b, 0.85, 0.9, 1.0], i * 7)
   }
   const bufEstrellas: any = device.createBuffer({ size: arrEstrellas.byteLength, usage: 0x20 | 0x8, mappedAtCreation: true })
   new Float32Array(bufEstrellas.getMappedRange()).set(arrEstrellas)
   bufEstrellas.unmap()
   const grupoPuntos: any = device.createBindGroup({ layout: pipePuntos.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: bufUni } }]})
+  // Chispas de explosión: buffer dinámico con el mismo layout.
+  const bufChispas: any = device.createBuffer({ size: Math.max(800 * 7 * 4, 16), usage: 0x20 | 0x8 })
+  const chispas = crearSistema(800)
+  const ultimasChispas = new Map<string, number>()
 
   // Estelas: últimos 600 centros por cuerpo (una órbita entera), un draw merged.
   const LARGO_ESTELA = 600
@@ -430,6 +435,23 @@ export async function montarUltra(
     device.queue.writeBuffer(bufCentros, 0, c)
     ultimosCentros = c
 
+    // Explosiones: proximidad entre cuerpos (radios visuales) con cooldown.
+    if (!pausado) {
+      const mundo: Array<[number, number, number]> = visuales.map((_v, i) => [
+        ultimosCentros[i * 4],
+        ultimosCentros[i * 4 + 1],
+        ultimosCentros[i * 4 + 2],
+      ])
+      const ahora = performance.now()
+      for (const golpe of detectarImpactos(mundo, visuales.map((v) => v.radioVisual))) {
+        const clave = `${Math.min(golpe.a, golpe.b)}-${Math.max(golpe.a, golpe.b)}`
+        if (puedeExplotar(ultimasChispas, clave, ahora, 3000)) {
+          explotar(chispas, golpe.punto, 150, 6)
+        }
+      }
+      actualizar(chispas, Math.min(dtMs / 1000, 0.1))
+    }
+
     // Estelas: un punto cada 2 frames (~20 s de historia a 60 fps).
     tikEstela += 1
     if (!pausado && tikEstela % 2 === 0) {
@@ -479,6 +501,12 @@ export async function montarUltra(
     paso.setBindGroup(0, grupoPuntos)
     paso.setVertexBuffer(0, bufEstrellas)
     paso.draw(1500, 1, 0, 0)
+    const chispaBytes = aIntercalado(chispas)
+    if (chispaBytes.length > 0) {
+      device.queue.writeBuffer(bufChispas, 0, chispaBytes)
+      paso.setVertexBuffer(0, bufChispas)
+      paso.draw(chispaBytes.length / 7, 1, 0, 0)
+    }
     paso.setPipeline(pipeOrbita)
     paso.setBindGroup(0, grupoOrbita)
     if (cuentaEstela > 0) {

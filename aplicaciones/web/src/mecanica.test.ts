@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { elementosOrbitales, formatearDistancia, G } from './mecanica'
+import { detectarImpactos, elementosOrbitales, formatearDistancia, G } from './mecanica'
 
 describe('mecánica orbital', () => {
   it('órbita circular: sma=r, ecc=0, período de Kepler', () => {
@@ -23,5 +23,12 @@ describe('mecánica orbital', () => {
   it('formatea distancias', () => {
     expect(formatearDistancia(384400)).toBe('384.4 km')
     expect(formatearDistancia(3.844e8)).toBe('384.4k km')
+  })
+
+  it('detecta impactos por proximidad', () => {
+    const cerca = detectarImpactos([[0, 0, 0], [1, 0, 0]], [1, 1])
+    expect(cerca).toHaveLength(1)
+    expect(cerca[0].punto).toEqual([0.5, 0, 0])
+    expect(detectarImpactos([[0, 0, 0], [100, 0, 0]], [1, 1])).toHaveLength(0)
   })
 })
