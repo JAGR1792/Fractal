@@ -11,11 +11,11 @@ a empezar. Muy notorio mirando la Luna.
 **Causas encadenadas:**
 - Los fotogramas del servidor son una ventana FINITA (~206 bloques); al
   acabarse, el reproductor hacía módulo al bloque 0.
-- La ventana cubre ~0.99 órbitas lunares, así que ni el detector de órbita
-  completa (`detectarBucle`) cierra perfecto: queda un salto de ~1 bloque.
-- El encadenado al 80% sembraba desde el ÚLTIMO bloque en vez del estado
-  actual (corregido en `856cd0e`: ahora usa `leerBloqueActual`), pero si el
-  cálculo tarda más que el 20% restante, igual se llega al final y se envuelve.
+- La ventana por defecto cubre **0.985 órbitas** (`600×3900` = 2.337e6 s vs
+  período lunar 2.372e6 s), así que el detector (`≥ 2π−0.05` = 99.2%) falla
+  SIEMPRE y cae al último bloque: salto de ~5° por ciclo. Causa raíz medida.
+- El encadenado al 80% siembra desde el estado actual (bien), pero hereda el
+  mismo defecto en cada tramo nuevo; y si el cálculo tarda, el wrap le gana.
 - La transición demo local → primera fuente también salta (círculo falso vs
   física real).
 

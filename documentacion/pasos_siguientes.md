@@ -27,9 +27,33 @@ Mapa vivo del proyecto: dónde vamos y qué falta. Actualizar en cada etapa.
 2. Endpoint binario `Float32Array` según `binario.ts` (`[t, x,y,z,vx,vy,vz × N]`), sin romper el JSON. Hecho en `agent/alya/etapa3-binario`: `GET /:id/binario` + `binario::codificar` + test.
 3. Cliente del API en el frontend: `POST` simulación, paginación de `estados`, `writeBuffer` al GPU (hoy `gpu.ts` es demo local). Hecho en `agent/alya/etapa3-binario`: `api.ts` (`probarFuente` con fallback), `traerBinario`/`partirBloques` y `montarUltra` animando fotogramas interpolados del servidor. LITE sigue demo (pendiente).
 4. **Modo en vivo (pendiente):** relanzar automáticamente con debounce al mover sliders, sin botón Lanzar. El Lanzar manual queda como fallback.
-5. **Flujo infinito (hecho en `agent/alya/flujo-infinito`):** al 80% del tramo se encadena la siguiente simulación desde el último estado; el reloj nunca se reinicia y la rotación no salta.
-5. Constructor de escenarios en Vue + compartir por URL o id del servidor.
-6. Persistencia y anti-abuso (hoy jobs en memoria, `MAX_CUERPOS=128`, `MAX_PASOS=200_000`).
+5. **Flujo infinito (hecho en `agent/alya/flujo-infinito`):** al 80% del tramo se encadena la siguiente simulación desde el estado actual interpolado; el reloj nunca se reinicia y la rotación no salta.
+6. Constructor de escenarios en Vue + compartir por URL o id del servidor.
+7. Persistencia y anti-abuso (hoy jobs en memoria, `MAX_CUERPOS=128`, `MAX_PASOS=200_000`).
+
+## Loop sin reinicios visibles (aprobado: alcance completo)
+
+**Diagnóstico:** la ventana por defecto cubre 0.985 órbitas lunares
+(`600×3900` = 2.337e6 s vs período 2.372e6 s), así que el detector
+(`≥ 2π−0.05`) falla siempre y el módulo salta ~5° por ciclo. El encadenado
+siembra bien pero hereda el mismo defecto en cada tramo.
+
+**Fase 1 — loop exacto (web):**
+1. Sobrepedir ~1.3× bloques por tramo y recortar al `k` detectado (con margen).
+2. Fundido de ~1 s en empalmes como red de seguridad.
+3. Prefetch adaptativo: disparar según el último tiempo de cálculo, no al 80% fijo.
+4. Test `saltoDeBucle()` puro + E2E largo de discontinuidad.
+5. Fundido de entrada demo → servidor.
+
+**Fase 2 — suavizado Verlet (motor + UI, aprobado con slider):**
+1. Parámetro `ε` en el motor: `a = Gm/(r²+ε²)^1.5`, con tests de conservación
+   y encuentro cercano.
+2. `suavizado` en `PeticionSimulacion` + validación + slider sandbox + docs.
+
+**Fase 3 — streaming (diseño primero):**
+1. ADR-0007: sesiones continuas (simulación reanudable en el API, protocolo
+   extendido, reconexión del frontend).
+2. Hitos con la UI actual como fallback.
 
 ## Etapa 4/5 — sandbox y arte
 
