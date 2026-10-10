@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { contarCuerpos, detectarLimiteBucle, interpolarBloque, partirBloques, posicionDe, tiempoDeBloque } from './binario'
+import { contarCuerpos, detectarLimiteBucle, interpolarBloque, partirBloques, posicionDe, saltoDeBucle, tiempoDeBloque } from './binario'
 
 describe('protocolo binario v1', () => {
   it('cuenta cuerpos y lee tiempo', () => {
@@ -42,5 +42,16 @@ describe('protocolo binario v1', () => {
     // A medio camino: ángulo π → x=-10, z≈0.
     expect(medio[7]).toBeCloseTo(-10, 3)
     expect(medio[9]).toBeCloseTo(0, 3)
+  })
+
+  it('salto cero en órbita cerrada y grande si se trunca', () => {
+    const bloques: Float32Array[] = []
+    for (let k = 0; k <= 64; k++) {
+      const a = (k / 64) * Math.PI * 2
+      bloques.push(new Float32Array([k, 0, 0, 0, 0, 0, 0, 10 * Math.cos(a), 0, 10 * Math.sin(a), 0, 0, 0]))
+    }
+    expect(saltoDeBucle(bloques, 64)).toBeCloseTo(0, 3)
+    // Truncada a media vuelta: el salto es el diámetro.
+    expect(saltoDeBucle(bloques, 32)).toBeCloseTo(20, 3)
   })
 })

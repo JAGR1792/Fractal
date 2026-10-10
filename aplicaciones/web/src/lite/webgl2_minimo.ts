@@ -141,7 +141,8 @@ function cargarTexturaGL(gl: WebGL2RenderingContext, url: string, reserva: [numb
 export interface ControlLite {
   alternarPausa: () => void
   fijarVelocidad: (v: number) => void
-  fijarFuente: (f: FuenteEstados | null) => void
+  /** Cambia la fuente (`limpiar=false` conserva estelas en encadenados). */
+  fijarFuente: (f: FuenteEstados | null, limpiar?: boolean) => void
   leerTiempo: () => number
   leerProgreso: () => number
   leerBloqueActual: () => Float32Array | null
@@ -250,6 +251,10 @@ export function montarLite(
   let bloques: Float32Array[] | null = fuente && fuente.bloques.length >= 2 ? fuente.bloques : null
   let escalaFuente = fuente?.escala ?? 1
   let limiteBucle = detectarLimiteBucle(bloques ?? [], visuales.length)
+  // Fundido de empalme (~1 s) sobre las posiciones del frame previo.
+  let fondoPos: Array<[number, number, number]> | null = null
+  let ultimaPos: Array<[number, number, number]> = []
+  let tFondo = 1
 
   function rangoLite(): { ini: number; fin: number } {
     if (!bloques || bloques.length < 2) return { ini: 0, fin: 0 }
@@ -303,6 +308,19 @@ export function montarLite(
       spinLite += dtS * velocidad * 1440 // segundos sim (ver periodo en GLSL)
     }
     const pos = posiciones(t)
+    if (tFondo < 1 && fondoPos && fondoPos.length === pos.length) {
+      tFondo = Math.min(1, tFondo + dtS)
+      const s = tFondo * tFondo * (3 - 2 * tFondo)
+      for (let i = 0; i < pos.length; i++) {
+        pos[i] = [
+          fondoPos[i][0] + (pos[i][0] - fondoPos[i][0]) * s,
+          fondoPos[i][1] + (pos[i][1] - fondoPos[i][1]) * s,
+          fondoPos[i][2] + (pos[i][2] - fondoPos[i][2]) * s,
+        ]
+      }
+      if (tFondo >= 1) fondoPos = null
+    }
+    ultimaPos = pos.map((p) => [p[0], p[1], p[2]] as [number, number, number])
     gl.clearColor(0.03, 0.03, 0.1, 1)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     gl.enable(gl.DEPTH_TEST)
@@ -388,12 +406,14 @@ export function montarLite(
   return {
     alternarPausa: () => { pausado = !pausado },
     fijarVelocidad: (v: number) => { velocidad = v },
-    fijarFuente: (f: FuenteEstados | null) => {
+    fijarFuente: (f: FuenteEstados | null, limpiar = true) => {
+      fondoPos = ultimaPos.map((p) => [p[0], p[1], p[2]] as [number, number, number])
+      tFondo = 0
       bloques = f && f.bloques.length >= 2 ? f.bloques : null
       escalaFuente = f?.escala ?? 1
       tiempoFuente = 0
       limiteBucle = detectarLimiteBucle(bloques ?? [], visuales.length)
-      for (const e of estelas) e.puntos.length = 0
+      if (limpiar) for (const e of estelas) e.puntos.length = 0
     },
     leerTiempo: () => spinLite,
     leerProgreso: () => {

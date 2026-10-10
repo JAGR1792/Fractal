@@ -84,6 +84,24 @@ export function detectarLimiteBucle(bloques: Float32Array[], nCuerpos: number): 
 }
 
 /**
+ * Salto del bucle en metros SI: distancia entre el estado inicial y el de
+ * cierre para el cuerpo 1 relativo al 0. Cero = loop perfecto.
+ */
+export function saltoDeBucle(bloques: Float32Array[], limite: number): number {
+  if (!bloques || bloques.length < 2) return Infinity
+  const a = bloques[0]
+  const b = bloques[Math.min(Math.max(limite, 1), bloques.length - 1)]
+  if (a.length < 13 || b.length < 13) {
+    // Un cuerpo: deriva absoluta (idealmente vuelve al inicio).
+    return Math.hypot(b[1] - a[1], b[2] - a[2], b[3] - a[3])
+  }
+  const dx = (b[7] - b[1]) - (a[7] - a[1])
+  const dy = (b[8] - b[2]) - (a[8] - a[2])
+  const dz = (b[9] - b[3]) - (a[9] - a[3])
+  return Math.hypot(dx, dy, dz)
+}
+
+/**
  * Bloque interpolado al instante `t` dentro de `[bloques[0][0]..bloques[limite][0]]`.
  * Devuelve copia nueva `[t, x,y,z,vx,vy,vz × N]`.
  */

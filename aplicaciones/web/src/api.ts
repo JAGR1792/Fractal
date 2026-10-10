@@ -15,6 +15,8 @@ export interface FuenteEstados {
   bloques: Float32Array[]
   /** Factor mundo (misma escala que `normalizarPosiciones`). */
   escala: number
+  /** Milisegundos que tardó el cálculo (para el prefetch adaptativo). */
+  tCalculoMs: number
 }
 
 /** Cuerpo en el formato que espera Rust (`Vec3` como objeto, no tupla). */
@@ -92,16 +94,20 @@ export async function probarFuente(visuales: CuerpoVisual[], dt: number, pasos: 
     clearTimeout(fuera)
     if (!salud || !salud.ok) return null
 
-    const cadaN = Math.max(1, Math.floor(pasos / 200))
+    // Sobrepedido ×1.3: la ventana debe cubrir más de una órbita para que
+    // el detector de bucle cierre con margen (ver detectarLimiteBucle).
+    const pasosFx = Math.ceil(pasos * 1.3)
+    const cadaN = Math.max(1, Math.floor(pasosFx / 200))
+    const tIni = performance.now()
     const crear = await fetch(`${base}/api/v1/simulaciones`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(aPeticion(visuales, dt, pasos, cadaN)),
+      body: JSON.stringify(aPeticion(visuales, dt, pasosFx, cadaN)),
     })
     if (crear.status !== 202) return null
     const { id } = (await crear.json()) as { id: string }
 
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 200; i++) {
       const ficha = await fetch(`${base}/api/v1/simulaciones/${id}`).catch(() => null)
       if (!ficha || !ficha.ok) return null
       const info = (await ficha.json()) as { estado: string }
@@ -112,7 +118,11 @@ export async function probarFuente(visuales: CuerpoVisual[], dt: number, pasos: 
     const foto: Fotogramas = await traerBinario(base, id, 0, 500)
     if (foto.bloques < 2) return null
     const { partirBloques } = await import('./binario')
-    return { bloques: partirBloques(foto.datos, foto.cuerpos), escala: escalaMundo(visuales) }
+    return {
+      bloques: partirBloques(foto.datos, foto.cuerpos),
+      escala: escalaMundo(visuales),
+      tCalculoMs: performance.now() - tIni,
+    }
   } catch {
     return null
   }

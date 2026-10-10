@@ -18,7 +18,7 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   let control: {
     alternarPausa: () => void
     fijarVelocidad: (v: number) => void
-    fijarFuente?: (f: FuenteEstados | null) => void
+    fijarFuente?: (f: FuenteEstados | null, limpiar?: boolean) => void
     leerTiempo?: () => number
     leerProgreso?: () => number
     leerPosicionesActuales?: () => number[] | null
@@ -75,7 +75,11 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
       reloj.textContent = t === undefined ? '—' : `T+ ${formatearTiempo(t)}`
     }
     if (encadenando || !fuente || !control.fijarFuente || !control.leerProgreso) return
-    if ((control.leerProgreso() ?? 0) < 0.8) return
+    // Prefetch adaptativo: dispara con margen para 3× el último cálculo.
+    // A 1x el tramo dura ~20 s de pared; más velocidad = menos margen.
+    const vel = Number((document.getElementById('vel') as HTMLInputElement | null)?.value ?? '1') || 1
+    const margen = Math.min(Math.max(((fuente.tCalculoMs || 800) * 3 * vel) / 20000, 0.1), 0.5)
+    if ((control.leerProgreso() ?? 0) < 1 - margen) return
     // Semilla = estado ACTUAL interpolado (no el último bloque): así el
     // empalme cae exactamente donde estás mirando, sin saltos.
     const ahora = control.leerBloqueActual?.() ?? fuente.bloques[fuente.bloques.length - 1]
@@ -87,7 +91,8 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     if (nueva) {
       fuente = nueva
       base = siguientes
-      control.fijarFuente(nueva)
+      // Sin limpiar estelas: la trayectoria continúa, no reinicia.
+      control.fijarFuente(nueva, false)
       panel?.fijarEstado('listo (flujo continuo)')
     }
     encadenando = false

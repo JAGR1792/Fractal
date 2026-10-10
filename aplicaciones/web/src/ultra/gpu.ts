@@ -21,7 +21,8 @@ export interface ControlUltra {
   fijarVelocidad: (v: number) => void
   seleccionar: (id: string | null) => void
   /** Cambia la fuente de fotogramas en vivo (`null` = demo local). */
-  fijarFuente: (f: FuenteEstados | null) => void
+  /** Cambia la fuente (`limpiar=false` conserva estelas en encadenados). */
+  fijarFuente: (f: FuenteEstados | null, limpiar?: boolean) => void
   /** Segundos simulados actuales (para el reloj de la barra). */
   leerTiempo: () => number
   /** Fracción 0..1 del tramo actual (para encadenar antes del final). */
@@ -282,6 +283,9 @@ export async function montarUltra(
   let spinSim = 0
   let ultimosCentros: Float32Array = centros
   const radios = visuales.map((c) => c.radioVisual * 1.2)
+  // Fundido de empalme (~1 s): mezcla la imagen previa con la nueva fuente.
+  let fondo: Float32Array | null = null
+  let tFondo = 1
   // Cuerpo que la cámara persigue (clic lo fija, R o clic al vacío lo suelta).
   let seguido: string | null = null
 
@@ -416,6 +420,13 @@ export async function montarUltra(
         c[i * 4 + 2] = Math.sin(a) * r
       })
     }
+    // Fundido de empalme: mezcla la foto previa durante ~1 s.
+    if (tFondo < 1 && fondo && fondo.length === c.length) {
+      tFondo = Math.min(1, tFondo + dtMs / 1000)
+      const s = tFondo * tFondo * (3 - 2 * tFondo)
+      for (let i = 0; i < c.length; i++) c[i] = fondo[i] + (c[i] - fondo[i]) * s
+      if (tFondo >= 1) fondo = null
+    }
     device.queue.writeBuffer(bufCentros, 0, c)
     ultimosCentros = c
 
@@ -497,14 +508,16 @@ export async function montarUltra(
     alternarPausa: () => { pausado = !pausado },
     fijarVelocidad: (v: number) => { velocidad = v },
     seleccionar: (id: string | null) => { seleccionado = id },
-    fijarFuente: (f: FuenteEstados | null) => {
+    fijarFuente: (f: FuenteEstados | null, limpiar = true) => {
+      // Foto previa para el fundido de empalme (~1 s, sin saltos).
+      fondo = ultimosCentros.slice()
+      tFondo = 0
       bloques = f && f.bloques.length >= 2 ? f.bloques : null
       escalaFuente = f?.escala ?? 1
       tiempoFuente = 0
       limiteBucle = detectarBucle()
-      // Sin esto, la estela vieja cruza la pantalla hasta la nueva
-      // trayectoria y parece teletransporte.
-      for (const e of estelas) e.puntos.length = 0
+      // Solo al Lanzar se limpia: en encadenados la estela continúa.
+      if (limpiar) for (const e of estelas) e.puntos.length = 0
     },
     leerSeleccion: () => seleccionado,
     leerTiempo: () => spinSim,
