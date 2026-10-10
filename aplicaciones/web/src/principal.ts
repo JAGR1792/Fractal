@@ -22,6 +22,7 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     leerTiempo?: () => number
     leerProgreso?: () => number
     leerPosicionesActuales?: () => number[] | null
+    leerBloqueActual?: () => Float32Array | null
     destruir?: () => void
   }
 
@@ -75,11 +76,13 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     }
     if (encadenando || !fuente || !control.fijarFuente || !control.leerProgreso) return
     if ((control.leerProgreso() ?? 0) < 0.8) return
-    const ultimo = fuente.bloques[fuente.bloques.length - 1]
-    if (!ultimo) return
+    // Semilla = estado ACTUAL interpolado (no el último bloque): así el
+    // empalme cae exactamente donde estás mirando, sin saltos.
+    const ahora = control.leerBloqueActual?.() ?? fuente.bloques[fuente.bloques.length - 1]
+    if (!ahora) return
     encadenando = true
     panel?.fijarEstado('continuando…')
-    const siguientes = visualesDesdeBloque(base, ultimo)
+    const siguientes = visualesDesdeBloque(base, ahora)
     const nueva = await probarFuente(siguientes, params.dt, params.pasos)
     if (nueva) {
       fuente = nueva

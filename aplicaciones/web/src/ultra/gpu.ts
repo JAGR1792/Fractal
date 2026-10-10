@@ -27,6 +27,8 @@ export interface ControlUltra {
   leerProgreso: () => number
   /** Posiciones SI actuales (para bifurcar sin saltos). `null` si no hay. */
   leerPosicionesActuales: () => number[] | null
+  /** Bloque completo interpolado al instante actual (t + xyz + vxvyvz). */
+  leerBloqueActual: () => Float32Array | null
   destruir: () => void
   leerSeleccion: () => string | null
 }
@@ -539,6 +541,24 @@ export async function montarUltra(
     },
     leerSeleccion: () => seleccionado,
     leerTiempo: () => spinSim,
+    leerBloqueActual: () => {
+      if (!bloques || bloques.length < 2) return null
+      const { ini, fin } = rangoFuente()
+      const span = fin - ini
+      if (span <= 0) return null
+      const t = ini + ((tiempoFuente % span) + span) % span
+      const tope = Math.min(limiteBucle, bloques.length - 1)
+      let k = 0
+      while (k + 1 < tope && bloques[k + 1][0] <= t) k++
+      const a = bloques[k]
+      const b = bloques[Math.min(k + 1, tope)]
+      const tramo = b[0] - a[0]
+      const alpha = tramo > 0 ? Math.min(Math.max((t - a[0]) / tramo, 0), 1) : 0
+      const salida = new Float32Array(a.length)
+      salida[0] = t
+      for (let i = 1; i < a.length; i++) salida[i] = a[i] + (b[i] - a[i]) * alpha
+      return salida
+    },
     leerPosicionesActuales: () => {
       // Deshace el mapeo mundo [x*e, z*e, y*e] → SI. En demo la escala es
       // la del escenario; con servidor, la de la fuente.
