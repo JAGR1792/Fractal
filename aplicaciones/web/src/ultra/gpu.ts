@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { camaraInicial, conectarControles, invertir, matrizProyeccion, matrizVista, multiplicar, ojoDeCamara, rayoDesdePantalla, tocaEsfera, type EstadoCamara } from '../camara'
-import { aVisual, cargarEscenario, normalizarPosiciones, tipoPlaneta, urlTextura, type CuerpoVisual } from '../escenario'
+import { aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, tipoPlaneta, urlTextura, type CuerpoVisual } from '../escenario'
 import type { FuenteEstados } from '../api'
 import planetaWGSL from './sombreadores/planeta.wgsl?raw'
 import orbitaWGSL from './sombreadores/orbita.wgsl?raw'
@@ -25,6 +25,8 @@ export interface ControlUltra {
   leerTiempo: () => number
   /** Fracción 0..1 del tramo actual (para encadenar antes del final). */
   leerProgreso: () => number
+  /** Posiciones SI actuales (para bifurcar sin saltos). `null` si no hay. */
+  leerPosicionesActuales: () => number[] | null
   destruir: () => void
   leerSeleccion: () => string | null
 }
@@ -206,25 +208,8 @@ export async function montarUltra(
     depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
   })
 
-  // Órbitas: círculos aproximados en plano XZ
-  const vertsOrbita: number[] = []
-  const SEG = 128
-  visuales.forEach((c, i) => {
-    if (i === 0) return
-    const p = posMundo.get(c.id) ?? [10, 0, 0]
-    const r = Math.hypot(p[0], p[2])
-    for (let s = 0; s < SEG; s++) {
-      const a0 = (s / SEG) * Math.PI * 2
-      const a1 = ((s + 1) / SEG) * Math.PI * 2
-      const fade = 0.25 + 0.55 * (s / SEG)
-      vertsOrbita.push(Math.cos(a0) * r, 0, Math.sin(a0) * r, 0.45, 0.5, 0.6, fade)
-      vertsOrbita.push(Math.cos(a1) * r, 0, Math.sin(a1) * r, 0.45, 0.5, 0.6, fade)
-    }
-  })
-  const arrOrbita = new Float32Array(vertsOrbita)
-  const bufOrbita: any = device.createBuffer({ size: Math.max(arrOrbita.byteLength, 4), usage: 0x20 | 0x8, mappedAtCreation: true })
-  new Float32Array(bufOrbita.getMappedRange()).set(arrOrbita.length ? arrOrbita : new Float32Array([0]))
-  bufOrbita.unmap()
+  // Sin órbitas decorativas: la única órbita honesta es la estela viva
+  // (trayectoria real recorrida). Los círculos fijos mentían el plano.
   const pipeOrbita: any = device.createRenderPipeline({
     layout: 'auto',
     vertex: { module: modOrbita, entryPoint: 'vs', buffers: [{ arrayStride: 28, attributes: [
@@ -274,8 +259,8 @@ export async function montarUltra(
   bufEstrellas.unmap()
   const grupoPuntos: any = device.createBindGroup({ layout: pipePuntos.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: bufUni } }]})
 
-  // Estelas: últimos 240 centros por cuerpo, un draw merged con pipeOrbita.
-  const LARGO_ESTELA = 240
+  // Estelas: últimos 600 centros por cuerpo (una órbita entera), un draw merged.
+  const LARGO_ESTELA = 600
   const estelas: Estela[] = visuales.map(() => crearEstela(LARGO_ESTELA))
   const bufEstelas: any = device.createBuffer({ size: Math.max(n * LARGO_ESTELA * 2 * 7 * 4, 16), usage: 0x20 | 0x8 })
   let tikEstela = 0
@@ -465,9 +450,9 @@ export async function montarUltra(
     device.queue.writeBuffer(bufCentros, 0, c)
     ultimosCentros = c
 
-    // Estelas: un punto cada 3 frames (~12 s de historia a 60 fps).
+    // Estelas: un punto cada 2 frames (~20 s de historia a 60 fps).
     tikEstela += 1
-    if (!pausado && tikEstela % 3 === 0) {
+    if (!pausado && tikEstela % 2 === 0) {
       visuales.forEach((_v, i) => {
         empujarEstela(estelas[i], [c[i * 4], c[i * 4 + 1], c[i * 4 + 2]])
       })
@@ -516,8 +501,6 @@ export async function montarUltra(
     paso.draw(1500, 1, 0, 0)
     paso.setPipeline(pipeOrbita)
     paso.setBindGroup(0, grupoOrbita)
-    paso.setVertexBuffer(0, bufOrbita)
-    paso.draw(arrOrbita.length / 7, 1, 0, 0)
     if (cuentaEstela > 0) {
       paso.setVertexBuffer(0, bufEstelas)
       paso.draw(cuentaEstela, 1, 0, 0)
@@ -556,6 +539,17 @@ export async function montarUltra(
     },
     leerSeleccion: () => seleccionado,
     leerTiempo: () => spinSim,
+    leerPosicionesActuales: () => {
+      // Deshace el mapeo mundo [x*e, z*e, y*e] → SI. En demo la escala es
+      // la del escenario; con servidor, la de la fuente.
+      const e = bloques ? escalaFuente : escalaMundo(visuales)
+      if (!(e > 0)) return null
+      const salida: number[] = []
+      visuales.forEach((_v, i) => {
+        salida.push(ultimosCentros[i * 4] / e, ultimosCentros[i * 4 + 2] / e, ultimosCentros[i * 4 + 1] / e)
+      })
+      return salida
+    },
     leerProgreso: () => {
       const { ini, fin } = rangoFuente()
       const span = fin - ini

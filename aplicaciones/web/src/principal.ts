@@ -1,6 +1,6 @@
 import { elegirPerfil, type PerfilRender } from './detector'
 import { cargarEscenario, aVisual, type CuerpoVisual, type Escenario } from './escenario'
-import { probarFuente, visualesDesdeBloque, type FuenteEstados } from './api'
+import { probarFuente, visualesConPosiciones, visualesDesdeBloque, type FuenteEstados } from './api'
 import { montarSandbox, aplicarEdicion, type EdicionSandbox } from './sandbox'
 
 /**
@@ -21,6 +21,7 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     fijarFuente?: (f: FuenteEstados | null) => void
     leerTiempo?: () => number
     leerProgreso?: () => number
+    leerPosicionesActuales?: () => number[] | null
     destruir?: () => void
   }
 
@@ -106,7 +107,10 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   if (cajaSandbox && vis.length > 0) {
     panel = montarSandbox(cajaSandbox, vis, dt, pasos, async (ed: EdicionSandbox) => {
       panel?.fijarEstado('calculando…')
-      const editados = aplicarEdicion(vis, ed)
+      // Bifurca desde el vuelo actual (no desde el inicio): sin teletransporte.
+      const vuelo = control.leerPosicionesActuales?.() ?? null
+      const puntoDePartida = vuelo ? visualesConPosiciones(vis, vuelo) : vis
+      const editados = aplicarEdicion(puntoDePartida, ed)
       const nueva = await probarFuente(editados, ed.dt, ed.pasos)
       if (nueva && control.fijarFuente) {
         fuente = nueva

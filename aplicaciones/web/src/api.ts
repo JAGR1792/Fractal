@@ -64,6 +64,17 @@ export function visualesDesdeBloque(base: CuerpoVisual[], bloque: Float32Array):
   })
 }
 
+/**
+ * Pone posiciones SI (plano N×3) sobre la base, conservando velocidades.
+ * Para bifurcar desde el vuelo actual sin saltos visuales.
+ */
+export function visualesConPosiciones(base: CuerpoVisual[], pos: number[]): CuerpoVisual[] {
+  return base.map((c, i) => ({
+    ...c,
+    posicion: [pos[i * 3] ?? 0, pos[i * 3 + 1] ?? 0, pos[i * 3 + 2] ?? 0] as [number, number, number],
+  }))
+}
+
 function esperar(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }

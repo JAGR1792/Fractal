@@ -199,7 +199,6 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
   const texLuna = cargarTexturaGL(gl, urlTextura('luna') ?? '', [158, 158, 168])
 
   const vaoOrb = gl.createVertexArray()!
-  const bufOrb = gl.createBuffer()!
 
   // Estrellas fijas + estelas recientes por cuerpo.
   const posEstrellas = generarEstrellas(800, 7, 900)
@@ -261,7 +260,7 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
       estelasDe = visuales.length
       estelas.length = 0
     }
-    while (estelas.length < visuales.length) estelas.push(crearEstela(240))
+    while (estelas.length < visuales.length) estelas.push(crearEstela(600))
     gl.enable(gl.BLEND)
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
@@ -302,35 +301,14 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
     })
     gl.bindVertexArray(null)
 
-    // Órbitas: círculos en XZ + estelas recientes con fading.
+    // Sin círculos decorativos: solo estelas vivas (trayectoria recorrida).
     gl.useProgram(progOrb)
     gl.uniformMatrix4fv(locVPOrb, false, vp)
-    gl.uniform3f(locColorOrb, 0.45, 0.5, 0.65)
     gl.uniform1f(locAlphaOrb, 1)
     gl.bindVertexArray(vaoOrb)
     tikEstela += 1
-    visuales.forEach((c, i) => {
-      if (i === 0) return
-      const p0 = posMundo.get(c.id) ?? [10, 0, 0]
-      const r = Math.max(Math.hypot(p0[0], p0[2]), 1)
-      const pts = new Float32Array(129 * 4)
-      for (let s = 0; s <= 128; s++) {
-        const a = (s / 128) * Math.PI * 2
-        pts[s * 4] = Math.cos(a) * r
-        pts[s * 4 + 1] = 0
-        pts[s * 4 + 2] = Math.sin(a) * r
-        pts[s * 4 + 3] = 0.45
-      }
-      gl.bindBuffer(gl.ARRAY_BUFFER, bufOrb)
-      gl.bufferData(gl.ARRAY_BUFFER, pts, gl.DYNAMIC_DRAW)
-      gl.enableVertexAttribArray(0)
-      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 16, 0)
-      gl.enableVertexAttribArray(1)
-      gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 16, 12)
-      gl.drawArrays(gl.LINE_STRIP, 0, 129)
-    })
     // Estelas: historia real de posiciones (demo o servidor, lo que anime).
-    if (!pausado && tikEstela % 3 === 0) {
+    if (!pausado && tikEstela % 2 === 0) {
       visuales.forEach((c, i) => {
         const p0 = posMundo.get(c.id) ?? [10, 0, 0]
         let x = p0[0]

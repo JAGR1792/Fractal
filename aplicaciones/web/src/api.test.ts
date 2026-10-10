@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aPeticion, visualesDesdeBloque } from './api'
+import { aPeticion, visualesConPosiciones, visualesDesdeBloque } from './api'
 import { aVisual } from './escenario'
 
 describe('cliente API', () => {
@@ -29,5 +29,16 @@ describe('cliente API', () => {
     expect(rec[0].masa).toBe(5)
     expect(rec[0].posicion).toEqual([1, 2, 3])
     expect(rec[0].velocidad).toEqual([4, 5, 6])
+  })
+
+  it('pone posiciones del vuelo conservando velocidades', () => {
+    const vis = aVisual({
+      id: 'x', nombre: 'X', descripcion: '', cuerpos: [
+        { id: 'a', nombre: 'A', masa: 5, radio: 2, posicion: [0, 0, 0], velocidad: [7, 8, 9] },
+      ],
+    })
+    const rec = visualesConPosiciones(vis, [1, 2, 3])
+    expect(rec[0].posicion).toEqual([1, 2, 3])
+    expect(rec[0].velocidad).toEqual([7, 8, 9])
   })
 })
