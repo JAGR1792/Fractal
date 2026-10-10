@@ -1,6 +1,6 @@
 import { elegirPerfil, type PerfilRender } from './detector'
 import { cargarEscenario, aVisual, type CuerpoVisual, type Escenario } from './escenario'
-import { probarFuente, type FuenteEstados } from './api'
+import { probarFuente, visualesDesdeBloque, type FuenteEstados } from './api'
 import { montarSandbox, aplicarEdicion, type EdicionSandbox } from './sandbox'
 
 /**
@@ -20,6 +20,7 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     fijarVelocidad: (v: number) => void
     fijarFuente?: (f: FuenteEstados | null) => void
     leerTiempo?: () => number
+    leerProgreso?: () => number
     destruir?: () => void
   }
 
@@ -58,13 +59,35 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   const vel = document.getElementById('vel') as HTMLInputElement | null
   vel?.addEventListener('input', () => control.fijarVelocidad(Number(vel.value)))
 
-  // Reloj de tiempo simulado + toggle del panel.
+  // Reloj de tiempo simulado + toggle del panel + flujo infinito.
+  // Cuando el tramo roza el 80%, se encadena la siguiente simulación desde
+  // el último estado: el tiempo nunca se reinicia.
   const reloj = document.getElementById('tiempo')
-  setInterval(() => {
-    if (!reloj) return
-    const t = control.leerTiempo?.()
-    reloj.textContent = t === undefined ? '—' : `T+ ${formatearTiempo(t)}`
-  }, 250)
+  let encadenando = false
+  let base = vis
+  let params = { dt, pasos }
+  let panel: ReturnType<typeof montarSandbox> | null = null
+  setInterval(async () => {
+    if (reloj) {
+      const t = control.leerTiempo?.()
+      reloj.textContent = t === undefined ? '—' : `T+ ${formatearTiempo(t)}`
+    }
+    if (encadenando || !fuente || !control.fijarFuente || !control.leerProgreso) return
+    if ((control.leerProgreso() ?? 0) < 0.8) return
+    const ultimo = fuente.bloques[fuente.bloques.length - 1]
+    if (!ultimo) return
+    encadenando = true
+    panel?.fijarEstado('continuando…')
+    const siguientes = visualesDesdeBloque(base, ultimo)
+    const nueva = await probarFuente(siguientes, params.dt, params.pasos)
+    if (nueva) {
+      fuente = nueva
+      base = siguientes
+      control.fijarFuente(nueva)
+      panel?.fijarEstado('listo (flujo continuo)')
+    }
+    encadenando = false
+  }, 1000)
   const cajaSandbox = document.getElementById('sandbox')
   const btnSandbox = document.getElementById('btnSandbox') as HTMLButtonElement | null
   btnSandbox?.addEventListener('click', () => cajaSandbox?.classList.toggle('cerrado'))
@@ -81,28 +104,31 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
 
   // Panel sandbox: edita en vivo y relanza contra el API (ULTRA con fuente viva).
   if (cajaSandbox && vis.length > 0) {
-    const panel = montarSandbox(cajaSandbox, vis, dt, pasos, async (ed: EdicionSandbox) => {
-      panel.fijarEstado('calculando…')
+    panel = montarSandbox(cajaSandbox, vis, dt, pasos, async (ed: EdicionSandbox) => {
+      panel?.fijarEstado('calculando…')
       const editados = aplicarEdicion(vis, ed)
       const nueva = await probarFuente(editados, ed.dt, ed.pasos)
       if (nueva && control.fijarFuente) {
+        fuente = nueva
+        base = editados
+        params = { dt: ed.dt, pasos: ed.pasos }
         control.fijarFuente(nueva)
-        panel.fijarEstado(`listo: ${nueva.bloques.length} fotogramas`)
+        panel?.fijarEstado(`listo: ${nueva.bloques.length} fotogramas`)
       } else {
-        panel.fijarEstado('sin servidor (demo local)')
+        panel?.fijarEstado('sin servidor (demo local)')
       }
     })
-    if (perfil !== 'ultra') panel.fijarEstado('LITE: demo local')
-    else if (fuente) panel.fijarEstado(`listo: ${fuente.bloques.length} fotogramas`)
-    else panel.fijarEstado('sin servidor (demo local)')
+    if (perfil !== 'ultra') panel?.fijarEstado('LITE: demo local')
+    else if (fuente) panel?.fijarEstado(`listo: ${fuente.bloques.length} fotogramas`)
+    else panel?.fijarEstado('sin servidor (demo local)')
 
     // Picking 3D → sandbox: clic en un planeta lo selecciona en el panel.
     window.addEventListener('fractal-seleccion', ((e: CustomEvent<{ id: string | null }>) => {
       const id = e.detail.id
       if (id) {
-        panel.fijarCuerpo(id)
+        panel?.fijarCuerpo(id)
         const cuerpo = vis.find((c) => c.id === id)
-        if (cuerpo) panel.fijarEstado(`${cuerpo.nombre} seleccionado`)
+        if (cuerpo) panel?.fijarEstado(`${cuerpo.nombre} seleccionado`)
       }
     }) as EventListener)
   }

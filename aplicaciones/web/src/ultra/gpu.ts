@@ -23,6 +23,8 @@ export interface ControlUltra {
   fijarFuente: (f: FuenteEstados | null) => void
   /** Segundos simulados actuales (para el reloj de la barra). */
   leerTiempo: () => number
+  /** Fracción 0..1 del tramo actual (para encadenar antes del final). */
+  leerProgreso: () => number
   destruir: () => void
   leerSeleccion: () => string | null
 }
@@ -441,9 +443,10 @@ export async function montarUltra(
       // Física real hacia adelante: el bucle cierra una órbita completa
       // (ver detectarBucle), así el reinicio es invisible.
       const span = tFin - tIni
-      if (!pausado) tiempoFuente += (dtMs / 1000) * velocidad * (span / 20)
+      const avance = !pausado ? (dtMs / 1000) * velocidad * (span / 20) : 0
+      tiempoFuente += avance
+      spinSim += avance
       const t = tIni + ((tiempoFuente % span) + span) % span
-      spinSim = t
       centrosServidor(c, t)
     } else {
       // Demo local sin servidor: 1440 s sim por segundo real (la tierra
@@ -550,6 +553,12 @@ export async function montarUltra(
     },
     leerSeleccion: () => seleccionado,
     leerTiempo: () => spinSim,
+    leerProgreso: () => {
+      const { ini, fin } = rangoFuente()
+      const span = fin - ini
+      if (bloques === null || span <= 0) return 0
+      return Math.min(Math.max(tiempoFuente / span, 0), 1)
+    },
     destruir: () => {
       vivo = false
       desconectar()

@@ -27,6 +27,7 @@ Mapa vivo del proyecto: dónde vamos y qué falta. Actualizar en cada etapa.
 2. Endpoint binario `Float32Array` según `binario.ts` (`[t, x,y,z,vx,vy,vz × N]`), sin romper el JSON. Hecho en `agent/alya/etapa3-binario`: `GET /:id/binario` + `binario::codificar` + test.
 3. Cliente del API en el frontend: `POST` simulación, paginación de `estados`, `writeBuffer` al GPU (hoy `gpu.ts` es demo local). Hecho en `agent/alya/etapa3-binario`: `api.ts` (`probarFuente` con fallback), `traerBinario`/`partirBloques` y `montarUltra` animando fotogramas interpolados del servidor. LITE sigue demo (pendiente).
 4. **Modo en vivo (pendiente):** relanzar automáticamente con debounce al mover sliders, sin botón Lanzar. El Lanzar manual queda como fallback.
+5. **Flujo infinito (hecho en `agent/alya/flujo-infinito`):** al 80% del tramo se encadena la siguiente simulación desde el último estado; el reloj nunca se reinicia y la rotación no salta.
 5. Constructor de escenarios en Vue + compartir por URL o id del servidor.
 6. Persistencia y anti-abuso (hoy jobs en memoria, `MAX_CUERPOS=128`, `MAX_PASOS=200_000`).
 

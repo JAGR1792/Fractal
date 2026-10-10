@@ -28,8 +28,7 @@ interface CuerpoApi {
 }
 
 /** Convierte cuerpos visuales (tuplas) al JSON del API (objetos xyz). */
-export function aPeticion(visuales: CuerpoVisual[], dt: number, pasos: number, cadaN: number): { cuerpos: CuerpoApi[]; dt: number; pasos: number; cada_n: number } {
-  return {
+export function aPeticion(visuales: CuerpoVisual[], dt: number, pasos: number, cadaN: number): { cuerpos: CuerpoApi[]; dt: number; pasos: number; cada_n: number } {  return {
     cuerpos: visuales.map((c) => ({
       id: c.id,
       nombre: c.nombre,
@@ -48,6 +47,21 @@ export function aPeticion(visuales: CuerpoVisual[], dt: number, pasos: number, c
 export function baseApi(): string {
   const env = (import.meta as unknown as { env?: Record<string, string> }).env
   return env?.['VITE_API_URL'] ?? 'http://localhost:3000'
+}
+
+/**
+ * Reconstruye visuales desde un bloque binario (posiciones+velocidades en SI).
+ * Conserva id/nombre/masa/radio de `base`. Para encadenar simulaciones.
+ */
+export function visualesDesdeBloque(base: CuerpoVisual[], bloque: Float32Array): CuerpoVisual[] {
+  return base.map((c, i) => {
+    const o = 1 + i * 6
+    return {
+      ...c,
+      posicion: [bloque[o] ?? 0, bloque[o + 1] ?? 0, bloque[o + 2] ?? 0] as [number, number, number],
+      velocidad: [bloque[o + 3] ?? 0, bloque[o + 4] ?? 0, bloque[o + 5] ?? 0] as [number, number, number],
+    }
+  })
 }
 
 function esperar(ms: number): Promise<void> {
