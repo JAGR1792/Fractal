@@ -92,8 +92,7 @@ mod pruebas {
         let bytes = codificar(&dos_cuerpos(), 2);
         let (f32s, resto) = bytes.as_chunks::<4>();
         assert!(resto.is_empty());
-        let f32s: Vec<f32> =
-            f32s.iter().map(|pedazo| f32::from_le_bytes(*pedazo)).collect();
+        let f32s: Vec<f32> = f32s.iter().map(|pedazo| f32::from_le_bytes(*pedazo)).collect();
         assert_eq!(f32s.len(), 2 * (1 + 12));
         assert!((f32s[0] - 0.0).abs() < f32::EPSILON);
         assert!((f32s[13] - 3600.0).abs() < 0.001);
