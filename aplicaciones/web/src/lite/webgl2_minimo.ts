@@ -5,8 +5,10 @@
 
 import { aVisual, cargarEscenario, normalizarPosiciones, tipoPlaneta, urlTextura } from '../escenario'
 import { camaraInicial, conectarControles, matrizProyeccion, matrizVista, multiplicar, type EstadoCamara } from '../camara'
+import { crearEstela, empujarEstela, generarEstrellas, type Estela } from '../estelas'
 
 const VS = `#version 300 es
+precision mediump float;
 layout(location=0) in vec3 p;
 layout(location=1) in vec3 n;
 layout(location=2) in vec2 uv;
@@ -48,11 +50,24 @@ void main(){
 }`
 
 const VS_ORB = `#version 300 es
+precision mediump float;
 layout(location=0) in vec3 p;
+layout(location=1) in float a;
 uniform mat4 uVP;
-void main(){ gl_Position=uVP*vec4(p,1.0); }`
+out float vA;
+void main(){ vA = a; gl_Position=uVP*vec4(p,1.0); }`
 
 const FS_ORB = `#version 300 es
+precision mediump float;
+uniform vec3 uColor; uniform float uAlpha; in float vA; out vec4 o;
+void main(){ o=vec4(uColor, vA*uAlpha); }`
+
+const VS_PTS = `#version 300 es
+layout(location=0) in vec3 p;
+uniform mat4 uVP;
+void main(){ gl_Position=uVP*vec4(p,1.0); gl_PointSize=2.0; }`
+
+const FS_PTS = `#version 300 es
 precision mediump float;
 uniform vec3 uColor; out vec4 o;
 void main(){ o=vec4(uColor,1.0); }`
@@ -137,6 +152,7 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
 
   const prog = programa(gl, VS, FS)
   const progOrb = programa(gl, VS_ORB, FS_ORB)
+  const progPts = programa(gl, VS_PTS, FS_PTS)
   const locVP = gl.getUniformLocation(prog, 'uVP')
   const locCentro = gl.getUniformLocation(prog, 'uCentro')
   const locRadio = gl.getUniformLocation(prog, 'uRadio')
@@ -147,6 +163,9 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
   const locTexLuna = gl.getUniformLocation(prog, 'uTexLuna')
   const locVPOrb = gl.getUniformLocation(progOrb, 'uVP')
   const locColorOrb = gl.getUniformLocation(progOrb, 'uColor')
+  const locAlphaOrb = gl.getUniformLocation(progOrb, 'uAlpha')
+  const locVPPts = gl.getUniformLocation(progPts, 'uVP')
+  const locColorPts = gl.getUniformLocation(progPts, 'uColor')
 
   const esf = esferaCPU()
   const bufPos = gl.createBuffer()!
@@ -181,6 +200,21 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
 
   const vaoOrb = gl.createVertexArray()!
   const bufOrb = gl.createBuffer()!
+
+  // Estrellas fijas + estelas recientes por cuerpo.
+  const posEstrellas = generarEstrellas(800, 7, 900)
+  const bufPts = gl.createBuffer()!
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufPts)
+  gl.bufferData(gl.ARRAY_BUFFER, posEstrellas, gl.STATIC_DRAW)
+  const vaoPts = gl.createVertexArray()!
+  gl.bindVertexArray(vaoPts)
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufPts)
+  gl.enableVertexAttribArray(0)
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0)
+  gl.bindVertexArray(null)
+  const estelas: Estela[] = []
+  const bufEstela = gl.createBuffer()!
+  let tikEstela = 0
 
   let visuales = aVisual({
     id: 'demo', nombre: 'Demo', descripcion: '', cuerpos: [
@@ -221,6 +255,17 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
     gl.enable(gl.DEPTH_TEST)
 
     const vp = multiplicar(matrizProyeccion(w / h), matrizVista(cam))
+    while (estelas.length < visuales.length) estelas.push(crearEstela(240))
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+
+    // Estrellas: un draw de puntos fijos.
+    gl.useProgram(progPts)
+    gl.uniformMatrix4fv(locVPPts, false, vp)
+    gl.uniform3f(locColorPts, 0.85, 0.9, 1.0)
+    gl.bindVertexArray(vaoPts)
+    gl.drawArrays(gl.POINTS, 0, 800)
+    gl.bindVertexArray(null)
 
     // Planetas: un draw por cuerpo
     gl.useProgram(prog)
@@ -251,29 +296,71 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
     })
     gl.bindVertexArray(null)
 
-    // Órbitas: círculos en XZ
+    // Órbitas: círculos en XZ + estelas recientes con fading.
     gl.useProgram(progOrb)
     gl.uniformMatrix4fv(locVPOrb, false, vp)
     gl.uniform3f(locColorOrb, 0.45, 0.5, 0.65)
+    gl.uniform1f(locAlphaOrb, 1)
     gl.bindVertexArray(vaoOrb)
+    tikEstela += 1
     visuales.forEach((c, i) => {
       if (i === 0) return
       const p0 = posMundo.get(c.id) ?? [10, 0, 0]
       const r = Math.max(Math.hypot(p0[0], p0[2]), 1)
-      const pts = new Float32Array(129 * 3)
+      const pts = new Float32Array(129 * 4)
       for (let s = 0; s <= 128; s++) {
         const a = (s / 128) * Math.PI * 2
-        pts[s * 3] = Math.cos(a) * r
-        pts[s * 3 + 1] = 0
-        pts[s * 3 + 2] = Math.sin(a) * r
+        pts[s * 4] = Math.cos(a) * r
+        pts[s * 4 + 1] = 0
+        pts[s * 4 + 2] = Math.sin(a) * r
+        pts[s * 4 + 3] = 0.45
       }
       gl.bindBuffer(gl.ARRAY_BUFFER, bufOrb)
       gl.bufferData(gl.ARRAY_BUFFER, pts, gl.DYNAMIC_DRAW)
       gl.enableVertexAttribArray(0)
-      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0)
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 16, 0)
+      gl.enableVertexAttribArray(1)
+      gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 16, 12)
       gl.drawArrays(gl.LINE_STRIP, 0, 129)
     })
+    // Estelas: historia real de posiciones (demo o servidor, lo que anime).
+    if (!pausado && tikEstela % 3 === 0) {
+      visuales.forEach((c, i) => {
+        const p0 = posMundo.get(c.id) ?? [10, 0, 0]
+        let x = p0[0]
+        let z = p0[2]
+        if (i > 0) {
+          const r = Math.max(Math.hypot(p0[0], p0[2]), 1)
+          const a = angulo * (12 / r)
+          x = Math.cos(a) * r
+          z = Math.sin(a) * r
+        }
+        const e = estelas[i]
+        if (e) empujarEstela(e, [x, p0[1], z])
+      })
+    }
+    visuales.forEach((c, i) => {
+      const e = estelas[i]
+      if (!e || e.puntos.length < 2) return
+      const n = e.puntos.length
+      const tira = new Float32Array(n * 4)
+      for (let s = 0; s < n; s++) {
+        tira[s * 4] = e.puntos[s][0]
+        tira[s * 4 + 1] = e.puntos[s][1]
+        tira[s * 4 + 2] = e.puntos[s][2]
+        tira[s * 4 + 3] = s / n
+      }
+      gl.uniform3f(locColorOrb, c.color[0], c.color[1], c.color[2])
+      gl.bindBuffer(gl.ARRAY_BUFFER, bufEstela)
+      gl.bufferData(gl.ARRAY_BUFFER, tira, gl.DYNAMIC_DRAW)
+      gl.enableVertexAttribArray(0)
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 16, 0)
+      gl.enableVertexAttribArray(1)
+      gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 16, 12)
+      gl.drawArrays(gl.LINE_STRIP, 0, n)
+    })
     gl.bindVertexArray(null)
+    gl.disable(gl.BLEND)
   }
   requestAnimationFrame(cuadro)
 

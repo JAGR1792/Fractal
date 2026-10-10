@@ -4,6 +4,8 @@ import { aVisual, cargarEscenario, normalizarPosiciones, tipoPlaneta, urlTextura
 import type { FuenteEstados } from '../api'
 import planetaWGSL from './sombreadores/planeta.wgsl?raw'
 import orbitaWGSL from './sombreadores/orbita.wgsl?raw'
+import puntosWGSL from './sombreadores/puntos.wgsl?raw'
+import { aSegmentos, crearEstela, empujarEstela, generarEstrellas, type Estela } from '../estelas'
 
 // Usos de textura con nombre (no hex de memoria): GPUTextureUsage del navegador.
 const TU: any = (globalThis as any).GPUTextureUsage ?? { TEXTURE_BINDING: 0x10, COPY_DST: 0x08, RENDER_ATTACHMENT: 0x40 }
@@ -245,6 +247,37 @@ export async function montarUltra(
   ]})
   const grupoOrbita: any = device.createBindGroup({ layout: pipeOrbita.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: bufUni } }]})
 
+  // Estrellas fijas: 1500 puntos en cascarón de radio 900 (ver puntos.wgsl).
+  const modPuntos: any = device.createShaderModule({ code: puntosWGSL })
+  const pipePuntos: any = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: { module: modPuntos, entryPoint: 'vs', buffers: [{ arrayStride: 16, attributes: [
+      { shaderLocation: 0, offset: 0, format: 'float32x3' },
+      { shaderLocation: 1, offset: 12, format: 'float32' },
+    ]}]},
+    fragment: { module: modPuntos, entryPoint: 'fs', targets: [{ format: formato }] },
+    primitive: { topology: 'point-list' },
+    depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth24plus' },
+  })
+  const posEstrellas = generarEstrellas(1500, 1234, 900)
+  const arrEstrellas = new Float32Array(1500 * 4)
+  for (let i = 0; i < 1500; i++) {
+    arrEstrellas[i * 4] = posEstrellas[i * 3]
+    arrEstrellas[i * 4 + 1] = posEstrellas[i * 3 + 1]
+    arrEstrellas[i * 4 + 2] = posEstrellas[i * 3 + 2]
+    arrEstrellas[i * 4 + 3] = 0.3 + 0.7 * (((i * 2654435761) >>> 0) / 4294967296)
+  }
+  const bufEstrellas: any = device.createBuffer({ size: arrEstrellas.byteLength, usage: 0x20 | 0x8, mappedAtCreation: true })
+  new Float32Array(bufEstrellas.getMappedRange()).set(arrEstrellas)
+  bufEstrellas.unmap()
+  const grupoPuntos: any = device.createBindGroup({ layout: pipePuntos.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: bufUni } }]})
+
+  // Estelas: últimos 240 centros por cuerpo, un draw merged con pipeOrbita.
+  const LARGO_ESTELA = 240
+  const estelas: Estela[] = visuales.map(() => crearEstela(LARGO_ESTELA))
+  const bufEstelas: any = device.createBuffer({ size: Math.max(n * LARGO_ESTELA * 2 * 7 * 4, 16), usage: 0x20 | 0x8 })
+  let tikEstela = 0
+
   let pausado = false
   let velocidad = 1
   let seleccionado: string | null = null
@@ -429,6 +462,23 @@ export async function montarUltra(
     device.queue.writeBuffer(bufCentros, 0, c)
     ultimosCentros = c
 
+    // Estelas: un punto cada 3 frames (~12 s de historia a 60 fps).
+    tikEstela += 1
+    if (!pausado && tikEstela % 3 === 0) {
+      visuales.forEach((_v, i) => {
+        empujarEstela(estelas[i], [c[i * 4], c[i * 4 + 1], c[i * 4 + 2]])
+      })
+    }
+    const vertsEstela: number[] = []
+    visuales.forEach((v, i) => {
+      const e = estelas[i]
+      if (e && e.puntos.length >= 2) vertsEstela.push(...aSegmentos(e, v.color))
+    })
+    const cuentaEstela = vertsEstela.length / 7
+    if (cuentaEstela > 0) {
+      device.queue.writeBuffer(bufEstelas, 0, new Float32Array(vertsEstela))
+    }
+
     // Seguimiento: el objetivo persigue al cuerpo seleccionado cada frame.
     if (seguido !== null) {
       const i = visuales.findIndex((v) => v.id === seguido)
@@ -457,10 +507,18 @@ export async function montarUltra(
       colorAttachments: [{ view: contexto.getCurrentTexture().createView(), loadOp: 'clear', clearValue: { r: 0.02, g: 0.02, b: 0.08, a: 1 }, storeOp: 'store' }],
       depthStencilAttachment: { view: vistaProf, depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' },
     })
+    paso.setPipeline(pipePuntos)
+    paso.setBindGroup(0, grupoPuntos)
+    paso.setVertexBuffer(0, bufEstrellas)
+    paso.draw(1500, 1, 0, 0)
     paso.setPipeline(pipeOrbita)
     paso.setBindGroup(0, grupoOrbita)
     paso.setVertexBuffer(0, bufOrbita)
     paso.draw(arrOrbita.length / 7, 1, 0, 0)
+    if (cuentaEstela > 0) {
+      paso.setVertexBuffer(0, bufEstelas)
+      paso.draw(cuentaEstela, 1, 0, 0)
+    }
     paso.setPipeline(pipePlaneta)
     paso.setBindGroup(0, grupoPlaneta)
     paso.setVertexBuffer(0, bufVert)
