@@ -102,10 +102,7 @@ pub fn calcular_aceleraciones(cuerpos: &[Cuerpo]) -> Vec<Vec3> {
 /// assert_eq!(a.len(), 2);
 /// ```
 pub fn calcular_aceleraciones_suavizadas(cuerpos: &[Cuerpo], suavizado: f64) -> Vec<Vec3> {
-    assert!(
-        suavizado >= 0.0 && suavizado.is_finite(),
-        "el suavizado debe ser ≥ 0 y finito"
-    );
+    assert!(suavizado >= 0.0 && suavizado.is_finite(), "el suavizado debe ser ≥ 0 y finito");
     let n = cuerpos.len();
     let mut aceleraciones = vec![Vec3::cero(); n];
     let e2 = suavizado * suavizado;
@@ -202,8 +199,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "el suavizado debe ser")]
     fn suavizado_negativo_es_panico() {
-        let cuerpos =
-            vec![Cuerpo::nuevo("a", "A", 1.0, 1.0, Vec3::cero(), Vec3::cero())];
+        let cuerpos = vec![Cuerpo::nuevo("a", "A", 1.0, 1.0, Vec3::cero(), Vec3::cero())];
         let _ = calcular_aceleraciones_suavizadas(&cuerpos, -1.0);
     }
 }

@@ -147,7 +147,8 @@ mod pruebas {
 
     #[test]
     fn rechaza_sin_cuerpos() {
-        let peticion = PeticionSimulacion { cuerpos: vec![], dt: 1.0, pasos: 10, cada_n: 1, suavizado: 0.0 };
+        let peticion =
+            PeticionSimulacion { cuerpos: vec![], dt: 1.0, pasos: 10, cada_n: 1, suavizado: 0.0 };
         assert!(peticion.validar().is_err());
     }
 
