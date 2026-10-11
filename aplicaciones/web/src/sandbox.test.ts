@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aplicarEdicion } from './sandbox'
+import { aplicarEdicion, pasosParaDuracion } from './sandbox'
 import { aVisual } from './escenario'
 
 describe('panel sandbox', () => {
@@ -10,11 +10,17 @@ describe('panel sandbox', () => {
         { id: 'b', nombre: 'B', masa: 2, radio: 1, posicion: [9, 0, 0], velocidad: [0, 7, 0] },
       ],
     })
-    const editados = aplicarEdicion(vis, { cuerpoId: 'b', masa: 5, vx: 1, vy: 2, dt: 600, pasos: 100, suavizado: 0 })
+    const editados = aplicarEdicion(vis, { cuerpoId: 'b', masa: 5, vx: 1, vy: 2, dt: 600, duracionDias: 27, suavizado: 0 })
     expect(editados[0].masa).toBe(1)
     expect(editados[1].masa).toBe(5)
     expect(editados[1].velocidad).toEqual([1, 2, 0])
     // No muta el original
     expect(vis[1].masa).toBe(2)
+  })
+
+  it('calcula pasos desde duración y dt', () => {
+    expect(pasosParaDuracion(27, 600)).toBe(3888)
+    expect(pasosParaDuracion(0, 600)).toBe(50)
+    expect(pasosParaDuracion(27, 0)).toBe(50)
   })
 })

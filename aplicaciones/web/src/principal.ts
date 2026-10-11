@@ -1,7 +1,7 @@
 import { elegirPerfil, type PerfilRender } from './detector'
 import { cargarEscenario, aVisual, type CuerpoVisual, type Escenario } from './escenario'
 import { probarFuente, visualesConPosiciones, visualesDesdeBloque, type FuenteEstados } from './api'
-import { montarSandbox, aplicarEdicion, type EdicionSandbox } from './sandbox'
+import { montarSandbox, aplicarEdicion, pasosParaDuracion, type EdicionSandbox } from './sandbox'
 
 /**
  * Entrada web Fractal ULTRA/LITE.
@@ -123,7 +123,7 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
 
   // Panel sandbox: edita en vivo y relanza contra el API (ULTRA con fuente viva).
   if (cajaSandbox && vis.length > 0) {
-    panel = montarSandbox(cajaSandbox, vis, dt, pasos, async (ed: EdicionSandbox) => {
+    panel = montarSandbox(cajaSandbox, vis, dt, Math.round((pasos * dt) / 86400), async (ed: EdicionSandbox) => {
       // Invalida encadenados en vuelo: manda lo que el usuario pidió ahora.
       const miGen = ++generacion
       panel?.fijarEstado('calculando…')
@@ -131,12 +131,13 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
       const vuelo = control.leerPosicionesActuales?.() ?? null
       const puntoDePartida = vuelo ? visualesConPosiciones(vis, vuelo) : vis
       const editados = aplicarEdicion(puntoDePartida, ed)
-      const nueva = await probarFuente(editados, ed.dt, ed.pasos, ed.suavizado)
+      const pasosEd = pasosParaDuracion(ed.duracionDias, ed.dt)
+      const nueva = await probarFuente(editados, ed.dt, pasosEd, ed.suavizado)
       if (miGen !== generacion) return
       if (nueva && control.fijarFuente) {
         fuente = nueva
         base = editados
-        params = { dt: ed.dt, pasos: ed.pasos, suavizado: ed.suavizado }
+        params = { dt: ed.dt, pasos: pasosEd, suavizado: ed.suavizado }
         control.fijarFuente(nueva)
         panel?.fijarEstado(`listo: ${nueva.bloques.length} fotogramas`)
       } else {
