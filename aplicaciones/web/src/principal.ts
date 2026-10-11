@@ -69,6 +69,9 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   let base = vis
   let params = { dt, pasos, suavizado: 0 }
   let panel: ReturnType<typeof montarSandbox> | null = null
+  // Generación: cada Lanzar/encadenado la sube; las respuestas viejas que
+  // lleguen tarde se descartan en vez de devolverte a otra trayectoria.
+  let generacion = 0
   setInterval(async () => {
     if (reloj) {
       const t = control.leerTiempo?.()
@@ -85,9 +88,16 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     const ahora = control.leerBloqueActual?.() ?? fuente.bloques[fuente.bloques.length - 1]
     if (!ahora) return
     encadenando = true
+    const miGen = ++generacion
     panel?.fijarEstado('continuando…')
     const siguientes = visualesDesdeBloque(base, ahora)
     const nueva = await probarFuente(siguientes, params.dt, params.pasos, params.suavizado)
+    // Si mientras tanto el usuario lanzó otra cosa, esta respuesta ya es
+    // vieja: se descarta, no se aplica.
+    if (miGen !== generacion) {
+      encadenando = false
+      return
+    }
     if (nueva) {
       fuente = nueva
       base = siguientes
@@ -114,12 +124,15 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   // Panel sandbox: edita en vivo y relanza contra el API (ULTRA con fuente viva).
   if (cajaSandbox && vis.length > 0) {
     panel = montarSandbox(cajaSandbox, vis, dt, pasos, async (ed: EdicionSandbox) => {
+      // Invalida encadenados en vuelo: manda lo que el usuario pidió ahora.
+      const miGen = ++generacion
       panel?.fijarEstado('calculando…')
       // Bifurca desde el vuelo actual (no desde el inicio): sin teletransporte.
       const vuelo = control.leerPosicionesActuales?.() ?? null
       const puntoDePartida = vuelo ? visualesConPosiciones(vis, vuelo) : vis
       const editados = aplicarEdicion(puntoDePartida, ed)
       const nueva = await probarFuente(editados, ed.dt, ed.pasos, ed.suavizado)
+      if (miGen !== generacion) return
       if (nueva && control.fijarFuente) {
         fuente = nueva
         base = editados
