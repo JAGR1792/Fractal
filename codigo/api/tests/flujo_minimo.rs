@@ -81,6 +81,7 @@ async fn crear_y_leer_simulacion() {
 #[tokio::test]
 async fn rechaza_peticion_invalida() {
     let servidor = TestServer::new(crear_app(Almacen::nuevo())).unwrap();
-    let mala = PeticionSimulacion { cuerpos: vec![], dt: -1.0, pasos: 0, cada_n: 0, suavizado: 0.0 };
+    let mala =
+        PeticionSimulacion { cuerpos: vec![], dt: -1.0, pasos: 0, cada_n: 0, suavizado: 0.0 };
     servidor.post("/api/v1/simulaciones").json(&mala).await.assert_status_bad_request();
 }
