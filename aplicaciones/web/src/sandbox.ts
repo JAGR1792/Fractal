@@ -11,8 +11,10 @@ export interface EdicionSandbox {
   vx: number
   vy: number
   dt: number
-  /** Duración simulada en días (el cliente calcula los pasos). */
+  /** Duración simulada en días (se ignora si `infinito`). */
   duracionDias: number
+  /** Sin fin: encadena tramos para siempre con trozos fijos. */
+  infinito: boolean
   /** Suavizado gravitacional ε en metros (0 = Newton puro). */
   suavizado: number
 }
@@ -21,6 +23,15 @@ export interface EdicionSandbox {
 export function pasosParaDuracion(dias: number, dt: number): number {
   if (!(dt > 0)) return 50
   return Math.max(50, Math.round((dias * 86400) / dt))
+}
+
+/**
+ * Pasos por tramo en modo continuo: ~2.4e6 s de física (≈ un mes) con el
+ * `dt` dado, acotado para no colgar el servidor ni encadenar a cada rato.
+ */
+export function pasosContinuos(dt: number): number {
+  if (!(dt > 0)) return 4000
+  return Math.min(20000, Math.max(500, Math.round(2.4e6 / dt)))
 }
 
 /** Clona los visuales aplicando la edición (puro, testeable). */
@@ -42,6 +53,7 @@ function leerEdicion(raiz: HTMLElement): EdicionSandbox {
     vy: num('sbVyNum'),
     dt: num('sbDtNum'),
     duracionDias: num('sbDurNum'),
+    infinito: (raiz.querySelector('#sbInf') as HTMLInputElement)?.checked ?? false,
     suavizado: num('sbSuavNum'),
   }
 }
@@ -119,6 +131,8 @@ export function montarSandbox(
     '<div class="grupo"><span class="titulo">Duración (días)</span><div class="fila">' +
     '<input id="sbDur" type="range" min="1" max="120" step="1" />' +
     '<input id="sbDurNum" type="number" min="1" max="120" step="1" /></div></div>' +
+    '<div class="grupo"><span class="titulo">Modo</span><div class="fila">' +
+    '<label><input id="sbInf" type="checkbox" checked /> Continuo ∞</label></div></div>' +
     '<div class="grupo"><span class="titulo">Suavizado (m)</span><div class="fila">' +
     '<input id="sbSuav" type="range" min="0" max="7" step="0.1" />' +
     '<input id="sbSuavNum" type="number" min="0" max="1e7" step="any" /></div></div>' +

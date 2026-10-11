@@ -1,7 +1,7 @@
 import { elegirPerfil, type PerfilRender } from './detector'
 import { cargarEscenario, aVisual, type CuerpoVisual, type Escenario } from './escenario'
 import { probarFuente, visualesConPosiciones, visualesDesdeBloque, type FuenteEstados } from './api'
-import { montarSandbox, aplicarEdicion, pasosParaDuracion, type EdicionSandbox } from './sandbox'
+import { montarSandbox, aplicarEdicion, pasosContinuos, pasosParaDuracion, type EdicionSandbox } from './sandbox'
 
 /**
  * Entrada web Fractal ULTRA/LITE.
@@ -67,8 +67,10 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   const reloj = document.getElementById('tiempo')
   let encadenando = false
   let base = vis
-  let params = { dt, pasos, suavizado: 0 }
+  let params = { dt, pasos, suavizado: 0, infinito: true, t0: 0, duracionSeg: Infinity }
   let panel: ReturnType<typeof montarSandbox> | null = null
+  // Tramo actual del flujo (crece con cada encadenado).
+  let tramo = 1
   // Generación: cada Lanzar/encadenado la sube; las respuestas viejas que
   // lleguen tarde se descartan en vez de devolverte a otra trayectoria.
   let generacion = 0
@@ -78,6 +80,13 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
       reloj.textContent = t === undefined ? '—' : `T+ ${formatearTiempo(t)}`
     }
     if (encadenando || !fuente || !control.fijarFuente || !control.leerProgreso) return
+    // En modo finito, al cubrir lo pedido se deja de encadenar: el tramo
+    // final queda en bucle. En continuo, para siempre.
+    const ahoraReloj = control.leerTiempo?.() ?? 0
+    if (!params.infinito && ahoraReloj - params.t0 >= params.duracionSeg) {
+      panel?.fijarEstado('fin del pedido (en bucle)')
+      return
+    }
     // Prefetch adaptativo: dispara con margen para 3× el último cálculo.
     // A 1x el tramo dura ~20 s de pared; más velocidad = menos margen.
     const vel = Number((document.getElementById('vel') as HTMLInputElement | null)?.value ?? '1') || 1
@@ -101,9 +110,10 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     if (nueva) {
       fuente = nueva
       base = siguientes
+      tramo += 1
       // Sin limpiar estelas: la trayectoria continúa, no reinicia.
       control.fijarFuente(nueva, false)
-      panel?.fijarEstado('listo (flujo continuo)')
+      panel?.fijarEstado(`tramo ${tramo} · flujo continuo`)
     }
     encadenando = false
   }, 1000)
@@ -131,20 +141,29 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
       const vuelo = control.leerPosicionesActuales?.() ?? null
       const puntoDePartida = vuelo ? visualesConPosiciones(vis, vuelo) : vis
       const editados = aplicarEdicion(puntoDePartida, ed)
-      const pasosEd = pasosParaDuracion(ed.duracionDias, ed.dt)
+      // Continuo = trozos fijos para siempre; con duración, lo pedido.
+      const pasosEd = ed.infinito ? pasosContinuos(ed.dt) : pasosParaDuracion(ed.duracionDias, ed.dt)
       const nueva = await probarFuente(editados, ed.dt, pasosEd, ed.suavizado)
       if (miGen !== generacion) return
       if (nueva && control.fijarFuente) {
         fuente = nueva
         base = editados
-        params = { dt: ed.dt, pasos: pasosEd, suavizado: ed.suavizado }
+        tramo = 1
+        params = {
+          dt: ed.dt,
+          pasos: pasosEd,
+          suavizado: ed.suavizado,
+          infinito: ed.infinito,
+          t0: control.leerTiempo?.() ?? 0,
+          duracionSeg: ed.duracionDias * 86400,
+        }
         control.fijarFuente(nueva)
-        panel?.fijarEstado(`listo: ${nueva.bloques.length} fotogramas`)
+        panel?.fijarEstado(`tramo 1 · listo: ${nueva.bloques.length} fotogramas`)
       } else {
         panel?.fijarEstado('sin servidor (demo local)')
       }
     })
-    if (fuente) panel?.fijarEstado(`listo: ${fuente.bloques.length} fotogramas`)
+    if (fuente) panel?.fijarEstado(`tramo 1 · listo: ${fuente.bloques.length} fotogramas`)
     else panel?.fijarEstado('sin servidor (demo local)')
 
     // Picking 3D → sandbox: clic en un planeta lo selecciona en el panel.
