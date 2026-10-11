@@ -39,9 +39,9 @@ pub mod vector;
 pub mod prelude {
     pub use crate::constantes::*;
     pub use crate::cuerpo::Cuerpo;
-    pub use crate::estado::{Estado, simular};
-    pub use crate::gravedad::calcular_aceleraciones;
-    pub use crate::integrador::paso_velocity_verlet;
+    pub use crate::estado::{Estado, simular, simular_con};
+    pub use crate::gravedad::{calcular_aceleraciones, calcular_aceleraciones_suavizadas};
+    pub use crate::integrador::{paso_velocity_verlet, paso_velocity_verlet_con};
     pub use crate::metricas::{Diagnostico, diagnosticar, energia_total, momento_total};
     pub use crate::vector::Vec3;
 }

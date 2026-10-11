@@ -1,7 +1,7 @@
 import { elegirPerfil, type PerfilRender } from './detector'
 import { cargarEscenario, aVisual, type CuerpoVisual, type Escenario } from './escenario'
-import { probarFuente, type FuenteEstados } from './api'
-import { montarSandbox, aplicarEdicion, type EdicionSandbox } from './sandbox'
+import { probarFuente, visualesConPosiciones, visualesDesdeBloque, type FuenteEstados } from './api'
+import { montarSandbox, aplicarEdicion, pasosContinuos, pasosParaDuracion, type EdicionSandbox } from './sandbox'
 
 /**
  * Entrada web Fractal ULTRA/LITE.
@@ -18,8 +18,11 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   let control: {
     alternarPausa: () => void
     fijarVelocidad: (v: number) => void
-    fijarFuente?: (f: FuenteEstados | null) => void
+    fijarFuente?: (f: FuenteEstados | null, limpiar?: boolean) => void
     leerTiempo?: () => number
+    leerProgreso?: () => number
+    leerPosicionesActuales?: () => number[] | null
+    leerBloqueActual?: () => Float32Array | null
     destruir?: () => void
   }
 
@@ -35,9 +38,9 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   const dt = esc?.parametros?.dt ?? 600
   const pasos = esc?.parametros?.pasos ?? 3900
 
-  // Fuente del servidor (solo ULTRA por ahora): no bloquea si el API cae.
+  // Fuente del servidor (ULTRA y LITE): no bloquea si el API cae.
   let fuente: FuenteEstados | null = null
-  if (perfil === 'ultra' && vis.length > 0) {
+  if (vis.length > 0) {
     fuente = await probarFuente(vis, dt, pasos)
     if (fuente) console.info(`[fractal] física del servidor: ${fuente.bloques.length} fotogramas`)
   }
@@ -47,7 +50,7 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     control = await montarUltra(lienzo, '/datos/dos_cuerpos.json', fuente)
   } else {
     const { montarLite } = await import('./lite/webgl2_minimo')
-    control = montarLite(lienzo)
+    control = montarLite(lienzo, '/datos/dos_cuerpos.json', fuente)
   }
 
   const btn = document.getElementById('btnPausa') as HTMLButtonElement | null
@@ -58,13 +61,62 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   const vel = document.getElementById('vel') as HTMLInputElement | null
   vel?.addEventListener('input', () => control.fijarVelocidad(Number(vel.value)))
 
-  // Reloj de tiempo simulado + toggle del panel.
+  // Reloj de tiempo simulado + toggle del panel + flujo infinito.
+  // Cuando el tramo roza el 80%, se encadena la siguiente simulación desde
+  // el último estado: el tiempo nunca se reinicia.
   const reloj = document.getElementById('tiempo')
-  setInterval(() => {
-    if (!reloj) return
-    const t = control.leerTiempo?.()
-    reloj.textContent = t === undefined ? '—' : `T+ ${formatearTiempo(t)}`
-  }, 250)
+  let encadenando = false
+  let base = vis
+  let params = { dt, pasos, suavizado: 0, infinito: true, t0: 0, duracionSeg: Infinity }
+  let panel: ReturnType<typeof montarSandbox> | null = null
+  // Tramo actual del flujo (crece con cada encadenado).
+  let tramo = 1
+  // Generación: cada Lanzar/encadenado la sube; las respuestas viejas que
+  // lleguen tarde se descartan en vez de devolverte a otra trayectoria.
+  let generacion = 0
+  setInterval(async () => {
+    if (reloj) {
+      const t = control.leerTiempo?.()
+      reloj.textContent = t === undefined ? '—' : `T+ ${formatearTiempo(t)}`
+    }
+    if (encadenando || !fuente || !control.fijarFuente || !control.leerProgreso) return
+    // En modo finito, al cubrir lo pedido se deja de encadenar: el tramo
+    // final queda en bucle. En continuo, para siempre.
+    const ahoraReloj = control.leerTiempo?.() ?? 0
+    if (!params.infinito && ahoraReloj - params.t0 >= params.duracionSeg) {
+      panel?.fijarEstado('fin del pedido (en bucle)')
+      return
+    }
+    // Prefetch adaptativo: dispara con margen para 3× el último cálculo.
+    // A 1x el tramo dura ~20 s de pared; más velocidad = menos margen.
+    const vel = Number((document.getElementById('vel') as HTMLInputElement | null)?.value ?? '1') || 1
+    const margen = Math.min(Math.max(((fuente.tCalculoMs || 800) * 3 * vel) / 20000, 0.1), 0.5)
+    if ((control.leerProgreso() ?? 0) < 1 - margen) return
+    // Semilla = estado ACTUAL interpolado (no el último bloque): así el
+    // empalme cae exactamente donde estás mirando, sin saltos.
+    const ahora = control.leerBloqueActual?.() ?? fuente.bloques[fuente.bloques.length - 1]
+    if (!ahora) return
+    encadenando = true
+    const miGen = ++generacion
+    panel?.fijarEstado('continuando…')
+    const siguientes = visualesDesdeBloque(base, ahora)
+    const nueva = await probarFuente(siguientes, params.dt, params.pasos, params.suavizado)
+    // Si mientras tanto el usuario lanzó otra cosa, esta respuesta ya es
+    // vieja: se descarta, no se aplica.
+    if (miGen !== generacion) {
+      encadenando = false
+      return
+    }
+    if (nueva) {
+      fuente = nueva
+      base = siguientes
+      tramo += 1
+      // Sin limpiar estelas: la trayectoria continúa, no reinicia.
+      control.fijarFuente(nueva, false)
+      panel?.fijarEstado(`tramo ${tramo} · flujo continuo`)
+    }
+    encadenando = false
+  }, 1000)
   const cajaSandbox = document.getElementById('sandbox')
   const btnSandbox = document.getElementById('btnSandbox') as HTMLButtonElement | null
   btnSandbox?.addEventListener('click', () => cajaSandbox?.classList.toggle('cerrado'))
@@ -81,28 +133,46 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
 
   // Panel sandbox: edita en vivo y relanza contra el API (ULTRA con fuente viva).
   if (cajaSandbox && vis.length > 0) {
-    const panel = montarSandbox(cajaSandbox, vis, dt, pasos, async (ed: EdicionSandbox) => {
-      panel.fijarEstado('calculando…')
-      const editados = aplicarEdicion(vis, ed)
-      const nueva = await probarFuente(editados, ed.dt, ed.pasos)
+    panel = montarSandbox(cajaSandbox, vis, dt, Math.round((pasos * dt) / 86400), async (ed: EdicionSandbox) => {
+      // Invalida encadenados en vuelo: manda lo que el usuario pidió ahora.
+      const miGen = ++generacion
+      panel?.fijarEstado('calculando…')
+      // Bifurca desde el vuelo actual (no desde el inicio): sin teletransporte.
+      const vuelo = control.leerPosicionesActuales?.() ?? null
+      const puntoDePartida = vuelo ? visualesConPosiciones(vis, vuelo) : vis
+      const editados = aplicarEdicion(puntoDePartida, ed)
+      // Continuo = trozos fijos para siempre; con duración, lo pedido.
+      const pasosEd = ed.infinito ? pasosContinuos(ed.dt) : pasosParaDuracion(ed.duracionDias, ed.dt)
+      const nueva = await probarFuente(editados, ed.dt, pasosEd, ed.suavizado)
+      if (miGen !== generacion) return
       if (nueva && control.fijarFuente) {
+        fuente = nueva
+        base = editados
+        tramo = 1
+        params = {
+          dt: ed.dt,
+          pasos: pasosEd,
+          suavizado: ed.suavizado,
+          infinito: ed.infinito,
+          t0: control.leerTiempo?.() ?? 0,
+          duracionSeg: ed.duracionDias * 86400,
+        }
         control.fijarFuente(nueva)
-        panel.fijarEstado(`listo: ${nueva.bloques.length} fotogramas`)
+        panel?.fijarEstado(`tramo 1 · listo: ${nueva.bloques.length} fotogramas`)
       } else {
-        panel.fijarEstado('sin servidor (demo local)')
+        panel?.fijarEstado('sin servidor (demo local)')
       }
     })
-    if (perfil !== 'ultra') panel.fijarEstado('LITE: demo local')
-    else if (fuente) panel.fijarEstado(`listo: ${fuente.bloques.length} fotogramas`)
-    else panel.fijarEstado('sin servidor (demo local)')
+    if (fuente) panel?.fijarEstado(`tramo 1 · listo: ${fuente.bloques.length} fotogramas`)
+    else panel?.fijarEstado('sin servidor (demo local)')
 
     // Picking 3D → sandbox: clic en un planeta lo selecciona en el panel.
     window.addEventListener('fractal-seleccion', ((e: CustomEvent<{ id: string | null }>) => {
       const id = e.detail.id
       if (id) {
-        panel.fijarCuerpo(id)
+        panel?.fijarCuerpo(id)
         const cuerpo = vis.find((c) => c.id === id)
-        if (cuerpo) panel.fijarEstado(`${cuerpo.nombre} seleccionado`)
+        if (cuerpo) panel?.fijarEstado(`${cuerpo.nombre} seleccionado`)
       }
     }) as EventListener)
   }

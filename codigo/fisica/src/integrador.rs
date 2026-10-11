@@ -9,7 +9,7 @@
 //! Ver ADR-0002 y `documentacion/cientifico/integrador_verlet.md`.
 
 use crate::cuerpo::Cuerpo;
-use crate::gravedad::calcular_aceleraciones;
+use crate::gravedad::calcular_aceleraciones_suavizadas;
 
 /// Un paso de Velocity Verlet para un sistema de N cuerpos.
 ///
@@ -54,12 +54,30 @@ use crate::gravedad::calcular_aceleraciones;
 /// assert!(cuerpos[1].posicion.distancia(&r_antes) > 0.0);
 /// ```
 pub fn paso_velocity_verlet(cuerpos: &mut [Cuerpo], dt: f64) {
+    paso_velocity_verlet_con(cuerpos, dt, 0.0);
+}
+
+/// Un paso de Velocity Verlet con suavizado gravitacional.
+///
+/// Igual que [`paso_velocity_verlet`], pero las fuerzas usan
+/// `ε` (ver [`calcular_aceleraciones_suavizadas`][crate::gravedad::calcular_aceleraciones_suavizadas]).
+///
+/// # Argumentos
+///
+/// * `cuerpos` — slice mutable de cuerpos (se actualiza in-place)
+/// * `dt` — paso temporal en segundos (debe ser > 0)
+/// * `suavizado` — longitud ε en metros (≥ 0)
+///
+/// # Panics
+///
+/// Si `dt <= 0` o el suavizado es inválido.
+pub fn paso_velocity_verlet_con(cuerpos: &mut [Cuerpo], dt: f64, suavizado: f64) {
     assert!(dt > 0.0, "el paso dt debe ser positivo");
 
     let n = cuerpos.len();
 
     // paso 1: aceleración actual
-    let aceleraciones = calcular_aceleraciones(cuerpos);
+    let aceleraciones = calcular_aceleraciones_suavizadas(cuerpos, suavizado);
 
     // paso 2: actualizar posiciones
     for i in 0..n {
@@ -67,7 +85,7 @@ pub fn paso_velocity_verlet(cuerpos: &mut [Cuerpo], dt: f64) {
     }
 
     // paso 3: nueva aceleración
-    let nuevas_aceleraciones = calcular_aceleraciones(cuerpos);
+    let nuevas_aceleraciones = calcular_aceleraciones_suavizadas(cuerpos, suavizado);
 
     // paso 4: actualizar velocidades con promedio
     for i in 0..n {

@@ -3,10 +3,16 @@
  * Sin motores. Un draw por cuerpo (N pequeño en LITE).
  */
 
-import { aVisual, cargarEscenario, normalizarPosiciones, tipoPlaneta, urlTextura } from '../escenario'
+import { aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, tipoPlaneta, urlTextura } from '../escenario'
 import { camaraInicial, conectarControles, matrizProyeccion, matrizVista, multiplicar, type EstadoCamara } from '../camara'
+import { crearEstela, empujarEstela, generarEstrellas, type Estela } from '../estelas'
+import { crearSistema, actualizar as actualizarChispas, aIntercalado as chispasIntercaladas, explotar as explotarChispas, puedeExplotar as puedeExplotarChispas } from '../particulas'
+import { detectarImpactos } from '../mecanica'
+import { detectarLimiteBucle, interpolarBloque } from '../binario'
+import type { FuenteEstados } from '../api'
 
 const VS = `#version 300 es
+precision mediump float;
 layout(location=0) in vec3 p;
 layout(location=1) in vec3 n;
 layout(location=2) in vec2 uv;
@@ -48,14 +54,31 @@ void main(){
 }`
 
 const VS_ORB = `#version 300 es
+precision mediump float;
 layout(location=0) in vec3 p;
+layout(location=1) in float a;
 uniform mat4 uVP;
-void main(){ gl_Position=uVP*vec4(p,1.0); }`
+out float vA;
+void main(){ vA = a; gl_Position=uVP*vec4(p,1.0); }`
 
 const FS_ORB = `#version 300 es
 precision mediump float;
-uniform vec3 uColor; out vec4 o;
-void main(){ o=vec4(uColor,1.0); }`
+uniform vec3 uColor; uniform float uAlpha; in float vA; out vec4 o;
+void main(){ o=vec4(uColor, vA*uAlpha); }`
+
+const VS_PTS = `#version 300 es
+precision mediump float;
+layout(location=0) in vec3 p;
+layout(location=1) in float b;
+layout(location=2) in vec3 col;
+uniform mat4 uVP;
+out float vB; out vec3 vC;
+void main(){ vB = b; vC = col; gl_Position=uVP*vec4(p,1.0); gl_PointSize=3.0; }`
+
+const FS_PTS = `#version 300 es
+precision mediump float;
+in float vB; in vec3 vC; out vec4 o;
+void main(){ o=vec4(vC*vB, vB); }`
 
 function programa(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
   const comp = (t: number, src: string): WebGLShader => {
@@ -124,11 +147,20 @@ function cargarTexturaGL(gl: WebGL2RenderingContext, url: string, reserva: [numb
 export interface ControlLite {
   alternarPausa: () => void
   fijarVelocidad: (v: number) => void
+  /** Cambia la fuente (`limpiar=false` conserva estelas en encadenados). */
+  fijarFuente: (f: FuenteEstados | null, limpiar?: boolean) => void
   leerTiempo: () => number
+  leerProgreso: () => number
+  leerBloqueActual: () => Float32Array | null
+  leerPosicionesActuales: () => number[] | null
   destruir: () => void
 }
 
-export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos_cuerpos.json'): ControlLite {
+export function montarLite(
+  lienzo: HTMLCanvasElement,
+  urlEscenario = '/datos/dos_cuerpos.json',
+  fuente: FuenteEstados | null = null,
+): ControlLite {
   const glRaw = lienzo.getContext('webgl2')
   if (!glRaw) throw new Error('sin WebGL2')
   const gl: WebGL2RenderingContext = glRaw
@@ -137,6 +169,7 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
 
   const prog = programa(gl, VS, FS)
   const progOrb = programa(gl, VS_ORB, FS_ORB)
+  const progPts = programa(gl, VS_PTS, FS_PTS)
   const locVP = gl.getUniformLocation(prog, 'uVP')
   const locCentro = gl.getUniformLocation(prog, 'uCentro')
   const locRadio = gl.getUniformLocation(prog, 'uRadio')
@@ -147,6 +180,8 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
   const locTexLuna = gl.getUniformLocation(prog, 'uTexLuna')
   const locVPOrb = gl.getUniformLocation(progOrb, 'uVP')
   const locColorOrb = gl.getUniformLocation(progOrb, 'uColor')
+  const locAlphaOrb = gl.getUniformLocation(progOrb, 'uAlpha')
+  const locVPPts = gl.getUniformLocation(progPts, 'uVP')
 
   const esf = esferaCPU()
   const bufPos = gl.createBuffer()!
@@ -180,7 +215,35 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
   const texLuna = cargarTexturaGL(gl, urlTextura('luna') ?? '', [158, 158, 168])
 
   const vaoOrb = gl.createVertexArray()!
-  const bufOrb = gl.createBuffer()!
+
+  // Estrellas fijas + estelas recientes por cuerpo.
+  const posEstrellas = generarEstrellas(800, 7, 900)
+  const arrEstrellas = new Float32Array(800 * 7)
+  for (let i = 0; i < 800; i++) {
+    const b = 0.3 + 0.7 * (((i * 2654435761) >>> 0) / 4294967296)
+    arrEstrellas.set([posEstrellas[i * 3], posEstrellas[i * 3 + 1], posEstrellas[i * 3 + 2], b, 0.85, 0.9, 1.0], i * 7)
+  }
+  const bufPts = gl.createBuffer()!
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufPts)
+  gl.bufferData(gl.ARRAY_BUFFER, arrEstrellas, gl.STATIC_DRAW)
+  const vaoPts = gl.createVertexArray()!
+  gl.bindVertexArray(vaoPts)
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufPts)
+  gl.enableVertexAttribArray(0)
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0)
+  gl.enableVertexAttribArray(1)
+  gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 28, 12)
+  gl.enableVertexAttribArray(2)
+  gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 28, 16)
+  gl.bindVertexArray(null)
+  // Chispas de explosión (mismo layout intercalado, buffer dinámico).
+  const bufChispas = gl.createBuffer()!
+  const chispas = crearSistema(800)
+  const ultimasChispas = new Map<string, number>()
+  const estelas: Estela[] = []
+  const bufEstela = gl.createBuffer()!
+  let tikEstela = 0
+  let estelasDe = -1
 
   let visuales = aVisual({
     id: 'demo', nombre: 'Demo', descripcion: '', cuerpos: [
@@ -200,6 +263,42 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
   let vivo = true
   let spinLite = 0
   let ultimoMs = performance.now()
+  let tiempoFuente = 0
+
+  // Fuente del servidor (igual que ULTRA): interpola fotogramas binarios.
+  let bloques: Float32Array[] | null = fuente && fuente.bloques.length >= 2 ? fuente.bloques : null
+  let escalaFuente = fuente?.escala ?? 1
+  let limiteBucle = detectarLimiteBucle(bloques ?? [], visuales.length)
+  // Fundido de empalme (~1 s) sobre las posiciones del frame previo.
+  let fondoPos: Array<[number, number, number]> | null = null
+  let ultimaPos: Array<[number, number, number]> = []
+  let tFondo = 1
+
+  function rangoLite(): { ini: number; fin: number } {
+    if (!bloques || bloques.length < 2) return { ini: 0, fin: 0 }
+    const fin = bloques[Math.min(limiteBucle, bloques.length - 1)][0]
+    return { ini: bloques[0][0], fin }
+  }
+
+  /** Posiciones mundo de todos los cuerpos este frame (servidor o demo). */
+  function posiciones(t: number): Array<[number, number, number]> {
+    if (bloques) {
+      const b = interpolarBloque(bloques, limiteBucle, t)
+      if (b) {
+        return visuales.map((_v, i) => {
+          const o = 1 + i * 6
+          return [b[o] * escalaFuente, b[o + 2] * escalaFuente, b[o + 1] * escalaFuente]
+        })
+      }
+    }
+    return visuales.map((c, i) => {
+      const p0 = posMundo.get(c.id) ?? [10, 0, 0]
+      if (i === 0) return [p0[0], p0[1], p0[2]]
+      const r = Math.max(Math.hypot(p0[0], p0[2]), 1)
+      const a = angulo * (12 / r)
+      return [Math.cos(a) * r, p0[1], Math.sin(a) * r]
+    })
+  }
 
   function cuadro(): void {
     if (!vivo) return
@@ -215,12 +314,78 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
     }
     gl.viewport(0, 0, lienzo.width, lienzo.height)
     if (!pausado) angulo += 0.004 * velocidad
-    if (!pausado) spinLite += dtS * velocidad * 1440 // segundos sim (ver periodo en GLSL)
+    const { ini: tIni, fin: tFin } = rangoLite()
+    const span = tFin - tIni
+    const hayServidor = bloques !== null && span > 0
+    let t = 0
+    if (hayServidor) {
+      if (!pausado) tiempoFuente += (dtS) * velocidad * (span / 20)
+      t = tIni + ((tiempoFuente % span) + span) % span
+      spinLite = t
+    } else if (!pausado) {
+      spinLite += dtS * velocidad * 1440 // segundos sim (ver periodo en GLSL)
+    }
+    const pos = posiciones(t)
+    if (tFondo < 1 && fondoPos && fondoPos.length === pos.length) {
+      tFondo = Math.min(1, tFondo + dtS)
+      const s = tFondo * tFondo * (3 - 2 * tFondo)
+      for (let i = 0; i < pos.length; i++) {
+        pos[i] = [
+          fondoPos[i][0] + (pos[i][0] - fondoPos[i][0]) * s,
+          fondoPos[i][1] + (pos[i][1] - fondoPos[i][1]) * s,
+          fondoPos[i][2] + (pos[i][2] - fondoPos[i][2]) * s,
+        ]
+      }
+      if (tFondo >= 1) fondoPos = null
+    }
+    ultimaPos = pos.map((p) => [p[0], p[1], p[2]] as [number, number, number])
     gl.clearColor(0.03, 0.03, 0.1, 1)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     gl.enable(gl.DEPTH_TEST)
 
     const vp = multiplicar(matrizProyeccion(w / h), matrizVista(cam))
+    // Si cambió el escenario, las estelas viejas mentirían: se limpian.
+    if (estelasDe !== visuales.length) {
+      estelasDe = visuales.length
+      estelas.length = 0
+    }
+    while (estelas.length < visuales.length) estelas.push(crearEstela(600))
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+
+    // Estrellas: un draw de puntos fijos.
+    gl.useProgram(progPts)
+    gl.uniformMatrix4fv(locVPPts, false, vp)
+    gl.bindVertexArray(vaoPts)
+    gl.drawArrays(gl.POINTS, 0, 800)
+    gl.bindVertexArray(null)
+
+    // Explosiones por proximidad (radios visuales) con cooldown.
+    if (!pausado) {
+      const mundo: Array<[number, number, number]> = pos.map((p) => [p[0], p[1], p[2]])
+      const ahora = performance.now()
+      for (const golpe of detectarImpactos(mundo, visuales.map((v) => v.radioVisual))) {
+        const clave = `${Math.min(golpe.a, golpe.b)}-${Math.max(golpe.a, golpe.b)}`
+        if (puedeExplotarChispas(ultimasChispas, clave, ahora, 3000)) {
+          explotarChispas(chispas, golpe.punto, 150, 6)
+        }
+      }
+      actualizarChispas(chispas, dtS)
+    }
+    const chispasArr = chispasIntercaladas(chispas)
+    if (chispasArr.length > 0) {
+      gl.useProgram(progPts)
+      gl.uniformMatrix4fv(locVPPts, false, vp)
+      gl.bindBuffer(gl.ARRAY_BUFFER, bufChispas)
+      gl.bufferData(gl.ARRAY_BUFFER, chispasArr, gl.DYNAMIC_DRAW)
+      gl.enableVertexAttribArray(0)
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0)
+      gl.enableVertexAttribArray(1)
+      gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 28, 12)
+      gl.enableVertexAttribArray(2)
+      gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 28, 16)
+      gl.drawArrays(gl.POINTS, 0, chispasArr.length / 7)
+    }
 
     // Planetas: un draw por cuerpo
     gl.useProgram(prog)
@@ -234,16 +399,8 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
     gl.uniform1f(locSpin, spinLite)
     gl.bindVertexArray(vaoEsfera)
     visuales.forEach((c, i) => {
-      const p0 = posMundo.get(c.id) ?? [10, 0, 0]
-      let x = p0[0]
-      let z = p0[2]
-      if (i > 0) {
-        const r = Math.max(Math.hypot(p0[0], p0[2]), 1)
-        const a = angulo * (12 / r)
-        x = Math.cos(a) * r
-        z = Math.sin(a) * r
-      }
-      gl.uniform3f(locCentro, x, p0[1], z)
+      const [x, y, z] = pos[i] ?? [10, 0, 0]
+      gl.uniform3f(locCentro, x, y, z)
       gl.uniform1f(locRadio, c.radioVisual)
       gl.uniform3f(locColor, c.color[0], c.color[1], c.color[2])
       gl.uniform1f(locTipo, tipoPlaneta(c.id))
@@ -251,36 +408,84 @@ export function montarLite(lienzo: HTMLCanvasElement, urlEscenario = '/datos/dos
     })
     gl.bindVertexArray(null)
 
-    // Órbitas: círculos en XZ
+    // Sin círculos decorativos: solo estelas vivas (trayectoria recorrida).
     gl.useProgram(progOrb)
     gl.uniformMatrix4fv(locVPOrb, false, vp)
-    gl.uniform3f(locColorOrb, 0.45, 0.5, 0.65)
+    gl.uniform1f(locAlphaOrb, 1)
     gl.bindVertexArray(vaoOrb)
+    tikEstela += 1
+    // Estelas: historia real de posiciones (demo o servidor, lo que anime).
+    if (!pausado && tikEstela % 2 === 0) {
+      visuales.forEach((_c, i) => {
+        const p = pos[i] ?? [10, 0, 0]
+        const e = estelas[i]
+        if (e) empujarEstela(e, [p[0], p[1], p[2]])
+      })
+    }
     visuales.forEach((c, i) => {
-      if (i === 0) return
-      const p0 = posMundo.get(c.id) ?? [10, 0, 0]
-      const r = Math.max(Math.hypot(p0[0], p0[2]), 1)
-      const pts = new Float32Array(129 * 3)
-      for (let s = 0; s <= 128; s++) {
-        const a = (s / 128) * Math.PI * 2
-        pts[s * 3] = Math.cos(a) * r
-        pts[s * 3 + 1] = 0
-        pts[s * 3 + 2] = Math.sin(a) * r
+      const e = estelas[i]
+      if (!e || e.puntos.length < 2) return
+      const n = e.puntos.length
+      const tira = new Float32Array(n * 4)
+      for (let s = 0; s < n; s++) {
+        tira[s * 4] = e.puntos[s][0]
+        tira[s * 4 + 1] = e.puntos[s][1]
+        tira[s * 4 + 2] = e.puntos[s][2]
+        tira[s * 4 + 3] = s / n
       }
-      gl.bindBuffer(gl.ARRAY_BUFFER, bufOrb)
-      gl.bufferData(gl.ARRAY_BUFFER, pts, gl.DYNAMIC_DRAW)
+      gl.uniform3f(locColorOrb, c.color[0], c.color[1], c.color[2])
+      gl.bindBuffer(gl.ARRAY_BUFFER, bufEstela)
+      gl.bufferData(gl.ARRAY_BUFFER, tira, gl.DYNAMIC_DRAW)
       gl.enableVertexAttribArray(0)
-      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0)
-      gl.drawArrays(gl.LINE_STRIP, 0, 129)
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 16, 0)
+      gl.enableVertexAttribArray(1)
+      gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 16, 12)
+      gl.drawArrays(gl.LINE_STRIP, 0, n)
     })
     gl.bindVertexArray(null)
+    gl.disable(gl.BLEND)
   }
   requestAnimationFrame(cuadro)
 
   return {
     alternarPausa: () => { pausado = !pausado },
     fijarVelocidad: (v: number) => { velocidad = v },
+    fijarFuente: (f: FuenteEstados | null, limpiar = true) => {
+      fondoPos = ultimaPos.map((p) => [p[0], p[1], p[2]] as [number, number, number])
+      tFondo = 0
+      bloques = f && f.bloques.length >= 2 ? f.bloques : null
+      escalaFuente = f?.escala ?? 1
+      tiempoFuente = 0
+      limiteBucle = detectarLimiteBucle(bloques ?? [], visuales.length)
+      if (limpiar) for (const e of estelas) e.puntos.length = 0
+    },
     leerTiempo: () => spinLite,
+    leerProgreso: () => {
+      const { ini, fin } = rangoLite()
+      const span = fin - ini
+      if (bloques === null || span <= 0) return 0
+      return Math.min(Math.max(tiempoFuente / span, 0), 1)
+    },
+    leerBloqueActual: () => {
+      if (!bloques || bloques.length < 2) return null
+      const { ini, fin } = rangoLite()
+      const span = fin - ini
+      if (span <= 0) return null
+      const t = ini + ((tiempoFuente % span) + span) % span
+      return interpolarBloque(bloques, limiteBucle, t)
+    },
+    leerPosicionesActuales: () => {
+      // Deshace el mapeo mundo [x*e, z*e, y*e] → SI (igual en demo y servidor,
+      // porque posMundo usa la misma convención que la fuente).
+      const e = bloques ? escalaFuente : escalaMundo(visuales)
+      if (!(e > 0)) return null
+      const { ini, fin } = rangoLite()
+      const span = fin - ini
+      const t = bloques && span > 0 ? ini + ((tiempoFuente % span) + span) % span : 0
+      const salida: number[] = []
+      for (const [x, y, z] of posiciones(t)) salida.push(x / e, z / e, y / e)
+      return salida
+    },
     destruir: () => { vivo = false; desconectar() },
   }
 }

@@ -24,6 +24,7 @@ pub const MAX_PASOS: usize = 200_000;
 ///     dt: 600.0,
 ///     pasos: 100,
 ///     cada_n: 10,
+///     suavizado: 0.0,
 /// };
 /// assert!(peticion.validar().is_ok());
 /// ```
@@ -37,6 +38,9 @@ pub struct PeticionSimulacion {
     pub pasos: usize,
     /// Registrar un estado cada N pasos (1 = todos).
     pub cada_n: usize,
+    /// Suavizado gravitacional ε en metros (0 = Newton puro).
+    #[serde(default)]
+    pub suavizado: f64,
 }
 
 impl PeticionSimulacion {
@@ -56,6 +60,9 @@ impl PeticionSimulacion {
         }
         if self.cada_n == 0 || self.cada_n > self.pasos {
             return Err("cada_n debe estar entre 1 y pasos".to_string());
+        }
+        if !self.suavizado.is_finite() || self.suavizado < 0.0 || self.suavizado > 1e9 {
+            return Err("suavizado debe estar entre 0 y 1e9 metros".to_string());
         }
         Ok(())
     }
@@ -140,23 +147,59 @@ mod pruebas {
 
     #[test]
     fn rechaza_sin_cuerpos() {
-        let peticion = PeticionSimulacion { cuerpos: vec![], dt: 1.0, pasos: 10, cada_n: 1 };
+        let peticion = PeticionSimulacion { cuerpos: vec![], dt: 1.0, pasos: 10, cada_n: 1, suavizado: 0.0 };
         assert!(peticion.validar().is_err());
     }
 
     #[test]
     fn rechaza_dt_invalido() {
         for dt in [0.0, -1.0, f64::NAN, f64::INFINITY] {
-            let peticion =
-                PeticionSimulacion { cuerpos: vec![cuerpo_minimo()], dt, pasos: 10, cada_n: 1 };
+            let peticion = PeticionSimulacion {
+                cuerpos: vec![cuerpo_minimo()],
+                dt,
+                pasos: 10,
+                cada_n: 1,
+                suavizado: 0.0,
+            };
             assert!(peticion.validar().is_err(), "dt={dt} debió fallar");
         }
     }
 
     #[test]
     fn rechaza_pasos_fuera_de_rango() {
-        let peticion =
-            PeticionSimulacion { cuerpos: vec![cuerpo_minimo()], dt: 1.0, pasos: 0, cada_n: 1 };
+        let peticion = PeticionSimulacion {
+            cuerpos: vec![cuerpo_minimo()],
+            dt: 1.0,
+            pasos: 0,
+            cada_n: 1,
+            suavizado: 0.0,
+        };
         assert!(peticion.validar().is_err());
+    }
+
+    #[test]
+    fn rechaza_suavizado_invalido() {
+        for suavizado in [-1.0, f64::NAN, f64::INFINITY, 1e10] {
+            let peticion = PeticionSimulacion {
+                cuerpos: vec![cuerpo_minimo()],
+                dt: 1.0,
+                pasos: 10,
+                cada_n: 1,
+                suavizado,
+            };
+            assert!(peticion.validar().is_err(), "suavizado={suavizado} debió fallar");
+        }
+    }
+
+    #[test]
+    fn acepta_suavizado_cero() {
+        let peticion = PeticionSimulacion {
+            cuerpos: vec![cuerpo_minimo()],
+            dt: 1.0,
+            pasos: 10,
+            cada_n: 1,
+            suavizado: 0.0,
+        };
+        assert!(peticion.validar().is_ok());
     }
 }

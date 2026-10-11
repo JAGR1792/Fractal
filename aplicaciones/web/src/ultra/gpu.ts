@@ -1,9 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { camaraInicial, conectarControles, invertir, matrizProyeccion, matrizVista, multiplicar, ojoDeCamara, rayoDesdePantalla, tocaEsfera, type EstadoCamara } from '../camara'
-import { aVisual, cargarEscenario, normalizarPosiciones, tipoPlaneta, urlTextura, type CuerpoVisual } from '../escenario'
+import { aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, tipoPlaneta, urlTextura, type CuerpoVisual } from '../escenario'
 import type { FuenteEstados } from '../api'
+import { detectarLimiteBucle, interpolarBloque } from '../binario'
 import planetaWGSL from './sombreadores/planeta.wgsl?raw'
 import orbitaWGSL from './sombreadores/orbita.wgsl?raw'
+import puntosWGSL from './sombreadores/puntos.wgsl?raw'
+import { aSegmentos, crearEstela, empujarEstela, generarEstrellas, type Estela } from '../estelas'
+import { actualizar, aIntercalado, crearSistema, explotar, puedeExplotar } from '../particulas'
+import { detectarImpactos } from '../mecanica'
 
 // Usos de textura con nombre (no hex de memoria): GPUTextureUsage del navegador.
 const TU: any = (globalThis as any).GPUTextureUsage ?? { TEXTURE_BINDING: 0x10, COPY_DST: 0x08, RENDER_ATTACHMENT: 0x40 }
@@ -18,9 +23,16 @@ export interface ControlUltra {
   fijarVelocidad: (v: number) => void
   seleccionar: (id: string | null) => void
   /** Cambia la fuente de fotogramas en vivo (`null` = demo local). */
-  fijarFuente: (f: FuenteEstados | null) => void
+  /** Cambia la fuente (`limpiar=false` conserva estelas en encadenados). */
+  fijarFuente: (f: FuenteEstados | null, limpiar?: boolean) => void
   /** Segundos simulados actuales (para el reloj de la barra). */
   leerTiempo: () => number
+  /** Fracción 0..1 del tramo actual (para encadenar antes del final). */
+  leerProgreso: () => number
+  /** Posiciones SI actuales (para bifurcar sin saltos). `null` si no hay. */
+  leerPosicionesActuales: () => number[] | null
+  /** Bloque completo interpolado al instante actual (t + xyz + vxvyvz). */
+  leerBloqueActual: () => Float32Array | null
   destruir: () => void
   leerSeleccion: () => string | null
 }
@@ -202,25 +214,8 @@ export async function montarUltra(
     depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
   })
 
-  // Órbitas: círculos aproximados en plano XZ
-  const vertsOrbita: number[] = []
-  const SEG = 128
-  visuales.forEach((c, i) => {
-    if (i === 0) return
-    const p = posMundo.get(c.id) ?? [10, 0, 0]
-    const r = Math.hypot(p[0], p[2])
-    for (let s = 0; s < SEG; s++) {
-      const a0 = (s / SEG) * Math.PI * 2
-      const a1 = ((s + 1) / SEG) * Math.PI * 2
-      const fade = 0.25 + 0.55 * (s / SEG)
-      vertsOrbita.push(Math.cos(a0) * r, 0, Math.sin(a0) * r, 0.45, 0.5, 0.6, fade)
-      vertsOrbita.push(Math.cos(a1) * r, 0, Math.sin(a1) * r, 0.45, 0.5, 0.6, fade)
-    }
-  })
-  const arrOrbita = new Float32Array(vertsOrbita)
-  const bufOrbita: any = device.createBuffer({ size: Math.max(arrOrbita.byteLength, 4), usage: 0x20 | 0x8, mappedAtCreation: true })
-  new Float32Array(bufOrbita.getMappedRange()).set(arrOrbita.length ? arrOrbita : new Float32Array([0]))
-  bufOrbita.unmap()
+  // Sin órbitas decorativas: la única órbita honesta es la estela viva
+  // (trayectoria real recorrida). Los círculos fijos mentían el plano.
   const pipeOrbita: any = device.createRenderPipeline({
     layout: 'auto',
     vertex: { module: modOrbita, entryPoint: 'vs', buffers: [{ arrayStride: 28, attributes: [
@@ -245,6 +240,40 @@ export async function montarUltra(
   ]})
   const grupoOrbita: any = device.createBindGroup({ layout: pipeOrbita.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: bufUni } }]})
 
+  // Estrellas fijas: 1500 puntos en cascarón de radio 900 (ver puntos.wgsl).
+  const modPuntos: any = device.createShaderModule({ code: puntosWGSL })
+  const pipePuntos: any = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: { module: modPuntos, entryPoint: 'vs', buffers: [{ arrayStride: 28, attributes: [
+      { shaderLocation: 0, offset: 0, format: 'float32x3' },
+      { shaderLocation: 1, offset: 12, format: 'float32' },
+      { shaderLocation: 2, offset: 16, format: 'float32x3' },
+    ]}]},
+    fragment: { module: modPuntos, entryPoint: 'fs', targets: [{ format: formato, blend: { color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' }, alpha: { srcFactor: 'one', dstFactor: 'one' } } }] },
+    primitive: { topology: 'point-list' },
+    depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth24plus' },
+  })
+  const posEstrellas = generarEstrellas(1500, 1234, 900)
+  const arrEstrellas = new Float32Array(1500 * 7)
+  for (let i = 0; i < 1500; i++) {
+    const b = 0.3 + 0.7 * (((i * 2654435761) >>> 0) / 4294967296)
+    arrEstrellas.set([posEstrellas[i * 3], posEstrellas[i * 3 + 1], posEstrellas[i * 3 + 2], b, 0.85, 0.9, 1.0], i * 7)
+  }
+  const bufEstrellas: any = device.createBuffer({ size: arrEstrellas.byteLength, usage: 0x20 | 0x8, mappedAtCreation: true })
+  new Float32Array(bufEstrellas.getMappedRange()).set(arrEstrellas)
+  bufEstrellas.unmap()
+  const grupoPuntos: any = device.createBindGroup({ layout: pipePuntos.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: bufUni } }]})
+  // Chispas de explosión: buffer dinámico con el mismo layout.
+  const bufChispas: any = device.createBuffer({ size: Math.max(800 * 7 * 4, 16), usage: 0x20 | 0x8 })
+  const chispas = crearSistema(800)
+  const ultimasChispas = new Map<string, number>()
+
+  // Estelas: últimos 600 centros por cuerpo (una órbita entera), un draw merged.
+  const LARGO_ESTELA = 600
+  const estelas: Estela[] = visuales.map(() => crearEstela(LARGO_ESTELA))
+  const bufEstelas: any = device.createBuffer({ size: Math.max(n * LARGO_ESTELA * 2 * 7 * 4, 16), usage: 0x20 | 0x8 })
+  let tikEstela = 0
+
   let pausado = false
   let velocidad = 1
   let seleccionado: string | null = null
@@ -259,6 +288,9 @@ export async function montarUltra(
   let spinSim = 0
   let ultimosCentros: Float32Array = centros
   const radios = visuales.map((c) => c.radioVisual * 1.2)
+  // Fundido de empalme (~1 s): mezcla la imagen previa con la nueva fuente.
+  let fondo: Float32Array | null = null
+  let tFondo = 1
   // Cuerpo que la cámara persigue (clic lo fija, R o clic al vacío lo suelta).
   let seguido: string | null = null
 
@@ -325,33 +357,7 @@ export async function montarUltra(
   let limiteBucle = 0
 
   function detectarBucle(): number {
-    const lista = bloques
-    if (!lista || lista.length < 3 || visuales.length < 2) {
-      return lista ? lista.length - 1 : 0
-    }
-    // Planos candidatos (índices dx,dy en el bloque): la órbita puede vivir
-    // en cualquiera según el escenario (dos_cuerpos usa XY).
-    const planos: Array<[number, number, number, number]> = [
-      [1, 2, 7, 8],
-      [1, 3, 7, 9],
-      [2, 3, 8, 9],
-    ]
-    const angulo = (b: Float32Array, p: [number, number, number, number]): number =>
-      Math.atan2(b[p[3]] - b[p[1]], b[p[2]] - b[p[0]])
-    const estado = planos.map((p) => ({ p, previo: angulo(lista[0], p), acum: 0 }))
-    for (let k = 1; k < lista.length; k++) {
-      const b = lista[k]
-      for (const s of estado) {
-        const a = angulo(b, s.p)
-        let d = a - s.previo
-        if (d > Math.PI) d -= 2 * Math.PI
-        if (d < -Math.PI) d += 2 * Math.PI
-        s.acum += d
-        s.previo = a
-        if (Math.abs(s.acum) >= 2 * Math.PI - 0.05) return k
-      }
-    }
-    return lista.length - 1
+    return detectarLimiteBucle(bloques ?? [], visuales.length)
   }
 
   function rangoFuente(): { ini: number; fin: number } {
@@ -366,22 +372,14 @@ export async function montarUltra(
   /** Escribe en `c` los centros interpolados del instante `t` (segundos sim). */
   function centrosServidor(c: Float32Array, t: number): void {
     if (!bloques) return
-    const tope = Math.min(limiteBucle, bloques.length - 1)
-    let k = 0
-    while (k + 1 < tope && bloques[k + 1][0] <= t) k++
-    const a = bloques[k]
-    const b = bloques[Math.min(k + 1, tope)]
-    const tramo = b[0] - a[0]
-    const alpha = tramo > 0 ? Math.min(Math.max((t - a[0]) / tramo, 0), 1) : 0
+    const b = interpolarBloque(bloques, limiteBucle, t)
+    if (!b) return
     visuales.forEach((_v, i) => {
       const base = 1 + i * 6
-      const x = a[base] + (b[base] - a[base]) * alpha
-      const y = a[base + 1] + (b[base + 1] - a[base + 1]) * alpha
-      const z = a[base + 2] + (b[base + 2] - a[base + 2]) * alpha
       // Misma convención que normalizarPosiciones: [x, z, y] × escala.
-      c[i * 4] = x * escalaFuente
-      c[i * 4 + 1] = z * escalaFuente
-      c[i * 4 + 2] = y * escalaFuente
+      c[i * 4] = b[base] * escalaFuente
+      c[i * 4 + 1] = b[base + 2] * escalaFuente
+      c[i * 4 + 2] = b[base + 1] * escalaFuente
     })
   }
 
@@ -408,9 +406,10 @@ export async function montarUltra(
       // Física real hacia adelante: el bucle cierra una órbita completa
       // (ver detectarBucle), así el reinicio es invisible.
       const span = tFin - tIni
-      if (!pausado) tiempoFuente += (dtMs / 1000) * velocidad * (span / 20)
+      const avance = !pausado ? (dtMs / 1000) * velocidad * (span / 20) : 0
+      tiempoFuente += avance
+      spinSim += avance
       const t = tIni + ((tiempoFuente % span) + span) % span
-      spinSim = t
       centrosServidor(c, t)
     } else {
       // Demo local sin servidor: 1440 s sim por segundo real (la tierra
@@ -426,8 +425,49 @@ export async function montarUltra(
         c[i * 4 + 2] = Math.sin(a) * r
       })
     }
+    // Fundido de empalme: mezcla la foto previa durante ~1 s.
+    if (tFondo < 1 && fondo && fondo.length === c.length) {
+      tFondo = Math.min(1, tFondo + dtMs / 1000)
+      const s = tFondo * tFondo * (3 - 2 * tFondo)
+      for (let i = 0; i < c.length; i++) c[i] = fondo[i] + (c[i] - fondo[i]) * s
+      if (tFondo >= 1) fondo = null
+    }
     device.queue.writeBuffer(bufCentros, 0, c)
     ultimosCentros = c
+
+    // Explosiones: proximidad entre cuerpos (radios visuales) con cooldown.
+    if (!pausado) {
+      const mundo: Array<[number, number, number]> = visuales.map((_v, i) => [
+        ultimosCentros[i * 4],
+        ultimosCentros[i * 4 + 1],
+        ultimosCentros[i * 4 + 2],
+      ])
+      const ahora = performance.now()
+      for (const golpe of detectarImpactos(mundo, visuales.map((v) => v.radioVisual))) {
+        const clave = `${Math.min(golpe.a, golpe.b)}-${Math.max(golpe.a, golpe.b)}`
+        if (puedeExplotar(ultimasChispas, clave, ahora, 3000)) {
+          explotar(chispas, golpe.punto, 150, 6)
+        }
+      }
+      actualizar(chispas, Math.min(dtMs / 1000, 0.1))
+    }
+
+    // Estelas: un punto cada 2 frames (~20 s de historia a 60 fps).
+    tikEstela += 1
+    if (!pausado && tikEstela % 2 === 0) {
+      visuales.forEach((_v, i) => {
+        empujarEstela(estelas[i], [c[i * 4], c[i * 4 + 1], c[i * 4 + 2]])
+      })
+    }
+    const vertsEstela: number[] = []
+    visuales.forEach((v, i) => {
+      const e = estelas[i]
+      if (e && e.puntos.length >= 2) vertsEstela.push(...aSegmentos(e, v.color))
+    })
+    const cuentaEstela = vertsEstela.length / 7
+    if (cuentaEstela > 0) {
+      device.queue.writeBuffer(bufEstelas, 0, new Float32Array(vertsEstela))
+    }
 
     // Seguimiento: el objetivo persigue al cuerpo seleccionado cada frame.
     if (seguido !== null) {
@@ -457,10 +497,22 @@ export async function montarUltra(
       colorAttachments: [{ view: contexto.getCurrentTexture().createView(), loadOp: 'clear', clearValue: { r: 0.02, g: 0.02, b: 0.08, a: 1 }, storeOp: 'store' }],
       depthStencilAttachment: { view: vistaProf, depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' },
     })
+    paso.setPipeline(pipePuntos)
+    paso.setBindGroup(0, grupoPuntos)
+    paso.setVertexBuffer(0, bufEstrellas)
+    paso.draw(1500, 1, 0, 0)
+    const chispaBytes = aIntercalado(chispas)
+    if (chispaBytes.length > 0) {
+      device.queue.writeBuffer(bufChispas, 0, chispaBytes)
+      paso.setVertexBuffer(0, bufChispas)
+      paso.draw(chispaBytes.length / 7, 1, 0, 0)
+    }
     paso.setPipeline(pipeOrbita)
     paso.setBindGroup(0, grupoOrbita)
-    paso.setVertexBuffer(0, bufOrbita)
-    paso.draw(arrOrbita.length / 7, 1, 0, 0)
+    if (cuentaEstela > 0) {
+      paso.setVertexBuffer(0, bufEstelas)
+      paso.draw(cuentaEstela, 1, 0, 0)
+    }
     paso.setPipeline(pipePlaneta)
     paso.setBindGroup(0, grupoPlaneta)
     paso.setVertexBuffer(0, bufVert)
@@ -484,14 +536,44 @@ export async function montarUltra(
     alternarPausa: () => { pausado = !pausado },
     fijarVelocidad: (v: number) => { velocidad = v },
     seleccionar: (id: string | null) => { seleccionado = id },
-    fijarFuente: (f: FuenteEstados | null) => {
+    fijarFuente: (f: FuenteEstados | null, limpiar = true) => {
+      // Foto previa para el fundido de empalme (~1 s, sin saltos).
+      fondo = ultimosCentros.slice()
+      tFondo = 0
       bloques = f && f.bloques.length >= 2 ? f.bloques : null
       escalaFuente = f?.escala ?? 1
       tiempoFuente = 0
       limiteBucle = detectarBucle()
+      // Solo al Lanzar se limpia: en encadenados la estela continúa.
+      if (limpiar) for (const e of estelas) e.puntos.length = 0
     },
     leerSeleccion: () => seleccionado,
     leerTiempo: () => spinSim,
+    leerBloqueActual: () => {
+      if (!bloques || bloques.length < 2) return null
+      const { ini, fin } = rangoFuente()
+      const span = fin - ini
+      if (span <= 0) return null
+      const t = ini + ((tiempoFuente % span) + span) % span
+      return interpolarBloque(bloques, limiteBucle, t)
+    },
+    leerPosicionesActuales: () => {
+      // Deshace el mapeo mundo [x*e, z*e, y*e] → SI. En demo la escala es
+      // la del escenario; con servidor, la de la fuente.
+      const e = bloques ? escalaFuente : escalaMundo(visuales)
+      if (!(e > 0)) return null
+      const salida: number[] = []
+      visuales.forEach((_v, i) => {
+        salida.push(ultimosCentros[i * 4] / e, ultimosCentros[i * 4 + 2] / e, ultimosCentros[i * 4 + 1] / e)
+      })
+      return salida
+    },
+    leerProgreso: () => {
+      const { ini, fin } = rangoFuente()
+      const span = fin - ini
+      if (bloques === null || span <= 0) return 0
+      return Math.min(Math.max(tiempoFuente / span, 0), 1)
+    },
     destruir: () => {
       vivo = false
       desconectar()

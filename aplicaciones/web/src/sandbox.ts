@@ -11,7 +11,27 @@ export interface EdicionSandbox {
   vx: number
   vy: number
   dt: number
-  pasos: number
+  /** Duración simulada en días (se ignora si `infinito`). */
+  duracionDias: number
+  /** Sin fin: encadena tramos para siempre con trozos fijos. */
+  infinito: boolean
+  /** Suavizado gravitacional ε en metros (0 = Newton puro). */
+  suavizado: number
+}
+
+/** Pasos necesarios para cubrir `dias` con paso `dt` (mínimo 50). */
+export function pasosParaDuracion(dias: number, dt: number): number {
+  if (!(dt > 0)) return 50
+  return Math.max(50, Math.round((dias * 86400) / dt))
+}
+
+/**
+ * Pasos por tramo en modo continuo: ~2.4e6 s de física (≈ un mes) con el
+ * `dt` dado, acotado para no colgar el servidor ni encadenar a cada rato.
+ */
+export function pasosContinuos(dt: number): number {
+  if (!(dt > 0)) return 4000
+  return Math.min(20000, Math.max(500, Math.round(2.4e6 / dt)))
 }
 
 /** Clona los visuales aplicando la edición (puro, testeable). */
@@ -32,7 +52,9 @@ function leerEdicion(raiz: HTMLElement): EdicionSandbox {
     vx: num('sbVxNum'),
     vy: num('sbVyNum'),
     dt: num('sbDtNum'),
-    pasos: Math.round(num('sbPasosNum')),
+    duracionDias: num('sbDurNum'),
+    infinito: (raiz.querySelector('#sbInf') as HTMLInputElement)?.checked ?? false,
+    suavizado: num('sbSuavNum'),
   }
 }
 
@@ -78,7 +100,7 @@ export function montarSandbox(
   contenedor: HTMLElement,
   cuerpos: CuerpoVisual[],
   dt: number,
-  pasos: number,
+  duracionDias: number,
   alLanzar: (ed: EdicionSandbox) => void,
 ): {
   fijarEstado: (msg: string) => void
@@ -86,6 +108,10 @@ export function montarSandbox(
   destruir: () => void
 } {
   contenedor.innerHTML =
+    '<div class="sb-head"><span class="sb-titulo">Sandbox</span>' +
+    '<span id="sbEstado" role="status"></span>' +
+    '<button id="sbLanzar">Lanzar</button></div>' +
+    '<div class="sb-grid">' +
     '<div class="grupo"><span class="titulo">Cuerpo</span>' +
     '<select id="sbCuerpo">' +
     cuerpos.map((c) => `<option value="${c.id}">${c.nombre}</option>`).join('') +
@@ -102,17 +128,23 @@ export function montarSandbox(
     '<div class="grupo"><span class="titulo">dt (s)</span><div class="fila">' +
     '<input id="sbDt" type="range" min="10" max="3600" step="10" />' +
     '<input id="sbDtNum" type="number" min="10" max="3600" step="10" /></div></div>' +
-    '<div class="grupo"><span class="titulo">Pasos</span><div class="fila">' +
-    '<input id="sbPasos" type="range" min="50" max="20000" step="50" />' +
-    '<input id="sbPasosNum" type="number" min="50" max="20000" step="50" /></div></div>' +
-    '<div class="grupo"><button id="sbLanzar">Lanzar</button><span id="sbEstado" role="status"></span></div>'
+    '<div class="grupo"><span class="titulo">Duración (días)</span><div class="fila">' +
+    '<input id="sbDur" type="range" min="1" max="120" step="1" />' +
+    '<input id="sbDurNum" type="number" min="1" max="120" step="1" /></div></div>' +
+    '<div class="grupo"><span class="titulo">Modo</span><div class="fila">' +
+    '<label><input id="sbInf" type="checkbox" checked /> Continuo ∞</label></div></div>' +
+    '<div class="grupo"><span class="titulo">Suavizado (m)</span><div class="fila">' +
+    '<input id="sbSuav" type="range" min="0" max="7" step="0.1" />' +
+    '<input id="sbSuavNum" type="number" min="0" max="1e7" step="any" /></div></div>' +
+    '</div>'
 
   const identico = (v: number): number => v
   parSincronizado(contenedor, 'sbMasa', 'sbMasaNum', (v) => Math.pow(10, v), (v) => Math.log10(v))
+  parSincronizado(contenedor, 'sbSuav', 'sbSuavNum', (v) => (v <= 0 ? 0 : Math.pow(10, v)), (v) => (v <= 0 ? 0 : Math.log10(v)))
   parSincronizado(contenedor, 'sbVx', 'sbVxNum', identico, identico)
   parSincronizado(contenedor, 'sbVy', 'sbVyNum', identico, identico)
   parSincronizado(contenedor, 'sbDt', 'sbDtNum', identico, identico)
-  parSincronizado(contenedor, 'sbPasos', 'sbPasosNum', identico, identico)
+  parSincronizado(contenedor, 'sbDur', 'sbDurNum', identico, identico)
   const sel = contenedor.querySelector('#sbCuerpo') as HTMLSelectElement
   const alCambiarCuerpo = (): void => refrescar(contenedor, cuerpos)
   sel.addEventListener('change', alCambiarCuerpo)
@@ -122,7 +154,8 @@ export function montarSandbox(
     ;(contenedor.querySelector(`#${idNum}`) as HTMLInputElement).value = String(v)
   }
   sembrar('sbDt', 'sbDtNum', dt)
-  sembrar('sbPasos', 'sbPasosNum', pasos)
+  sembrar('sbDur', 'sbDurNum', duracionDias)
+  sembrar('sbSuav', 'sbSuavNum', 0)
   refrescar(contenedor, cuerpos)
 
   const btn = contenedor.querySelector('#sbLanzar') as HTMLButtonElement
