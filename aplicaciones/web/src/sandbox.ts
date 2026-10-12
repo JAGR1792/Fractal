@@ -101,7 +101,7 @@ export function montarSandbox(
   cuerpos: CuerpoVisual[],
   dt: number,
   duracionDias: number,
-  alLanzar: (ed: EdicionSandbox) => void,
+  alCambiar: (ed: EdicionSandbox) => void,
 ): {
   fijarEstado: (msg: string) => void
   fijarCuerpo: (id: string) => void
@@ -109,8 +109,7 @@ export function montarSandbox(
 } {
   contenedor.innerHTML =
     '<div class="sb-head"><span class="sb-titulo">Sandbox</span>' +
-    '<span id="sbEstado" role="status"></span>' +
-    '<button id="sbLanzar">Lanzar</button></div>' +
+    '<span id="sbEstado" role="status"></span></div>' +
     '<div class="sb-grid">' +
     '<div class="grupo"><span class="titulo">Cuerpo</span>' +
     '<select id="sbCuerpo">' +
@@ -146,6 +145,8 @@ export function montarSandbox(
   parSincronizado(contenedor, 'sbDt', 'sbDtNum', identico, identico)
   parSincronizado(contenedor, 'sbDur', 'sbDurNum', identico, identico)
   const sel = contenedor.querySelector('#sbCuerpo') as HTMLSelectElement
+  // Por defecto, el último cuerpo (suele ser el que orbita: telemetría viva).
+  if (cuerpos.length > 1) sel.value = cuerpos[cuerpos.length - 1].id
   const alCambiarCuerpo = (): void => refrescar(contenedor, cuerpos)
   sel.addEventListener('change', alCambiarCuerpo)
   // dt/pasos iniciales (del escenario) en ambos controles.
@@ -158,9 +159,15 @@ export function montarSandbox(
   sembrar('sbSuav', 'sbSuavNum', 0)
   refrescar(contenedor, cuerpos)
 
-  const btn = contenedor.querySelector('#sbLanzar') as HTMLButtonElement
-  const alLanzarClick = (): void => alLanzar(leerEdicion(contenedor))
-  btn.addEventListener('click', alLanzarClick)
+  // Sin botón Lanzar: cualquier cambio relanza solo con debounce (en vivo).
+  let temporizador: number | undefined
+  const programar = (): void => {
+    window.clearTimeout(temporizador)
+    temporizador = window.setTimeout(() => alCambiar(leerEdicion(contenedor)), 700)
+  }
+  const alEntrada = (): void => programar()
+  contenedor.addEventListener('input', alEntrada)
+  contenedor.addEventListener('change', alEntrada)
 
   return {
     fijarEstado: (msg: string) => {
@@ -175,8 +182,10 @@ export function montarSandbox(
       refrescar(contenedor, cuerpos)
     },
     destruir: () => {
+      window.clearTimeout(temporizador)
       sel.removeEventListener('change', alCambiarCuerpo)
-      btn.removeEventListener('click', alLanzarClick)
+      contenedor.removeEventListener('input', alEntrada)
+      contenedor.removeEventListener('change', alEntrada)
     },
   }
 }

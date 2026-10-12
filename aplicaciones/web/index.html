@@ -15,6 +15,7 @@
       #vel { width: 90px; accent-color: #7DE2FC; }
       #tiempo { color: #7DE2FC; font-variant-numeric: tabular-nums; min-width: 86px; }
       #perfil { color: #999; font-size: 12px; }
+      #escala { color: #8a7d4b; font-size: 11px; border: 1px dashed #8a7d4b; border-radius: 6px; padding: 1px 6px; }
       #sandbox {
         position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 10;
         display: flex; flex-direction: column; gap: 8px;
@@ -39,12 +40,6 @@
       }
       #sandbox input[type=number]:focus, #sandbox select:focus { outline: 1px solid #7DE2FC; border-color: #7DE2FC; }
       #sandbox select { width: auto; max-width: 112px; cursor: pointer; }
-      #sbLanzar {
-        margin-left: auto; background: linear-gradient(180deg, #237a37, #175224);
-        color: #fff; font-weight: 700; border: 1px solid #3a8a4a; border-radius: 10px;
-        padding: 7px 22px; cursor: pointer; font-size: 13px;
-      }
-      #sbLanzar:hover { filter: brightness(1.15); }
       #sbEstado { color: #8fd08f; font-size: 12px; min-width: 120px; }
       #escena { flex: 1; width: 100%; min-height: 300px; touch-action: none; }
       #aviso { padding: 6px 12px; font-size: 13px; color: #ffb; }
@@ -60,6 +55,7 @@
         <label>Velocidad <input id="vel" type="range" min="0.1" max="10" step="0.1" value="1" /></label>
         <span id="tiempo" title="Tiempo simulado">—</span>
         <span id="perfil"></span>
+        <span id="escala" title="Los radios se exageran con escala logarítmica para que se vean; las posiciones y la física son SI reales">tamaños exagerados</span>
         <button id="btnSandbox" title="Mostrar/ocultar panel sandbox">Sandbox</button>
       </div>
       <div id="sandbox" aria-label="Panel sandbox: edita parámetros y lanza simulaciones"></div>
