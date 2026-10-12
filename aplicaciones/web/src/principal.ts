@@ -140,29 +140,36 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
       }
       if (cambioVuelo) {
         // Bifurca: las velocidades son condiciones iniciales nuevas.
+        // Bloquea el sondeo mientras tanto: sus respuestas serían rancias.
+        if (sondeando) return
+        sondeando = true
         panel?.fijarEstado('bifurcando…')
-        const ahora = control.leerBloqueActual?.() ?? buf[buf.length - 1] ?? null
-        if (!ahora) return
-        const puntoDePartida = visualesDesdeBloque(base, ahora)
-        const editados = aplicarEdicion(puntoDePartida, ed)
-        const nueva = await crearSesion(baseApiUrl, editados, ed.dt, ed.suavizado)
-        if (!nueva) {
-          panel?.fijarEstado('sin servidor (demo local)')
-          return
-        }
-        await fetch(`${baseApiUrl}/api/v1/sesiones/${sesionId}`, { method: 'DELETE' }).catch(() => null)
-        sesionId = nueva.id
-        buf = []
-        hasta = 0
-        base = editados
-        ultimoEnviado = { ...ed }
-        const primera = await leerSesion(baseApiUrl, sesionId, 0, 300)
-        if (primera && primera.bloques.length >= 2) {
-          buf = primera.bloques
-          hasta = primera.hasta
-          control.fijarFuente?.({ bloques: buf, escala, tCalculoMs: 0 }, false)
-          renderizarTabla(editados)
-          panel?.fijarEstado('sesión viva · flujo continuo')
+        try {
+          const ahora = control.leerBloqueActual?.() ?? buf[buf.length - 1] ?? null
+          if (!ahora) return
+          const puntoDePartida = visualesDesdeBloque(base, ahora)
+          const editados = aplicarEdicion(puntoDePartida, ed)
+          const nueva = await crearSesion(baseApiUrl, editados, ed.dt, ed.suavizado)
+          if (!nueva) {
+            panel?.fijarEstado('sin servidor (demo local)')
+            return
+          }
+          await fetch(`${baseApiUrl}/api/v1/sesiones/${sesionId}`, { method: 'DELETE' }).catch(() => null)
+          sesionId = nueva.id
+          buf = []
+          hasta = 0
+          base = editados
+          ultimoEnviado = { ...ed }
+          const primera = await leerSesion(baseApiUrl, sesionId, 0, 300)
+          if (primera && primera.bloques.length >= 2) {
+            buf = primera.bloques
+            hasta = primera.hasta
+            control.fijarFuente?.({ bloques: buf, escala, tCalculoMs: 0 }, false)
+            renderizarTabla(editados)
+            panel?.fijarEstado('sesión viva · flujo continuo')
+          }
+        } finally {
+          sondeando = false
         }
         return
       }
@@ -244,8 +251,12 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     }
     sondeando = true
     try {
-      const resp = await leerSesion(baseApiUrl, sesionId, hasta, 200)
-      if (!resp) return
+      // Fijada al pedir: si bifurcó mientras tanto, la respuesta es de otra
+      // sesión y se descarta (no contamina el buffer ni el cursor).
+      const idAhora = sesionId
+      if (!idAhora) return
+      const resp = await leerSesion(baseApiUrl, idAhora, hasta, 200)
+      if (!resp || idAhora !== sesionId) return
       if (resp.bloques.length > 0) {
         for (const b of resp.bloques) buf.push(b)
         control.anexarBloques?.(resp.bloques)

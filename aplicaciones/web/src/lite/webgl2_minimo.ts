@@ -475,7 +475,8 @@ export function montarLite(
         fondoPos = null
         tFondo = 1
       }
-      bloques = f && f.bloques.length >= 2 ? f.bloques : null
+      bloques = f && f.bloques.length >= 2 ? [...f.bloques] : null
+      // COPIA, no referencia (ver ULTRA: compartir duplicaba y sobrepodaba).
       escalaFuente = f?.escala ?? 1
       tiempoFuente = bloques ? bloques[0][0] : 0
       if (limpiar) for (const e of estelas) e.puntos.length = 0

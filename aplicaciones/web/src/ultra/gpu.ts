@@ -551,7 +551,10 @@ export async function montarUltra(
         fondo = null
         tFondo = 1
       }
-      bloques = f && f.bloques.length >= 2 ? f.bloques : null
+      bloques = f && f.bloques.length >= 2 ? [...f.bloques] : null
+      // COPIA, no referencia: el dueño del arreglo de principal también lo
+      // muta (poll/prune). Compartirlo duplicaba bloques y podaba dos veces,
+      // y eso dibujaba los saltos rectos.
       escalaFuente = f?.escala ?? 1
       tiempoFuente = bloques ? bloques[0][0] : 0
       // Solo al bifurcar se limpia: en stream la estela es historia continua.
