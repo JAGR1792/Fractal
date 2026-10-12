@@ -332,6 +332,8 @@ export function montarLite(
       spinLite += dtS * velocidad * 1440 // segundos sim (ver periodo en GLSL)
     }
     const pos = posiciones(t)
+    // La estela registra la física cruda (pre-fundido).
+    const posCruda = pos.map((p) => [p[0], p[1], p[2]] as [number, number, number])
     if (tFondo < 1 && fondoPos && fondoPos.length === pos.length) {
       tFondo = Math.min(1, tFondo + dtS)
       const s = tFondo * tFondo * (3 - 2 * tFondo)
@@ -421,11 +423,13 @@ export function montarLite(
     gl.bindVertexArray(vaoOrb)
     tikEstela += 1
     // Estelas: historia real de posiciones (demo o servidor, lo que anime).
+    // Crudas (pre-fundido) con marca temporal para cortar pausas.
     if (!pausado && tikEstela % 2 === 0) {
+      const ahoraEstela = performance.now()
       visuales.forEach((_c, i) => {
-        const p = pos[i] ?? [10, 0, 0]
+        const p = posCruda[i] ?? [10, 0, 0]
         const e = estelas[i]
-        if (e) empujarEstela(e, [p[0], p[1], p[2]])
+        if (e) empujarEstela(e, [p[0], p[1], p[2]], ahoraEstela)
       })
     }
     visuales.forEach((c, i) => {
@@ -457,8 +461,15 @@ export function montarLite(
     alternarPausa: () => { pausado = !pausado },
     fijarVelocidad: (v: number) => { velocidad = v },
     fijarFuente: (f: FuenteEstados | null, limpiar = true) => {
-      fondoPos = ultimaPos.map((p) => [p[0], p[1], p[2]] as [number, number, number])
-      tFondo = 0
+      // Fundido SOLO al Lanzar (limpiar=true). En encadenados la semilla es
+      // el estado actual: fundir frenaría la Luna 1 s en cada tramo.
+      if (limpiar) {
+        fondoPos = ultimaPos.map((p) => [p[0], p[1], p[2]] as [number, number, number])
+        tFondo = 0
+      } else {
+        fondoPos = null
+        tFondo = 1
+      }
       bloques = f && f.bloques.length >= 2 ? f.bloques : null
       escalaFuente = f?.escala ?? 1
       tiempoFuente = 0

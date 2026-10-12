@@ -19,12 +19,15 @@ a empezar. Muy notorio mirando la Luna.
 - La transición demo local → primera fuente también salta (círculo falso vs
   física real).
 
-**Arreglo aplicado (2026-10-12, rama `dev`):** detector por mejor-empalme
-(mínimo saltoDeBucle entre candidatos con ≥0.9 órbitas, umbral viejo
-2π−0.05 eliminado) + tramos continuos de ~2 órbitas (`pasosContinuos`
-4.8e6/dt) para que el cierre siempre exista + fundido de 1 s ya presente
-en empalmes y montaje inicial. Pendiente de verificación en vivo con API
-en `:3000` mirando la Luna un ciclo completo.
+**Causa raíz del frenazo (2026-10-12, verificado en LITE):** el fundido de
+1 s se aplicaba también en cada encadenado, aunque la semilla es el estado
+actual exacto (sin salto que ocultar). Durante ese segundo la Luna se
+arrastra hacia la foto vieja y luego suelta: a alta velocidad pasa mucho
+tiempo sim y se ve como frenazo + cambio de órbita; a baja, solo frenazo.
+Además la estela registraba posiciones fundidas (rizos fantasma).
+**Arreglo:** fundido solo al Lanzar/montar; encadenados sin fundido; estela
+con física cruda; interpolación Hermite (exacta en nodos) para resembrar sin
+deriva de energía. Verificado con 33 tests web.
 
 **Cómo reproducirlo:** `?perfil=ultra` con API en `:3000`, velocidad 1x,
 mirar la Luna ~20 s hasta el salto.

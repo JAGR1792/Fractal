@@ -129,6 +129,12 @@ export function saltoDeBucle(bloques: Float32Array[], limite: number): number {
 /**
  * Bloque interpolado al instante `t` dentro de `[bloques[0][0]..bloques[limite][0]]`.
  * Devuelve copia nueva `[t, x,y,z,vx,vy,vz × N]`.
+ *
+ * Interpolación de Hermite cúbica con las velocidades de los extremos:
+ * exacta en los nodos (posición Y velocidad) y mucho más fiel entre ellos
+ * que el lerp lineal. Esto importa el doble: suaviza el render Y reduce el
+ * error al resembrar el siguiente tramo desde el vuelo actual (cada
+ * re-sembraje con lerp cambiaba un poco la energía y la órbita derivaba).
  */
 export function interpolarBloque(bloques: Float32Array[], limite: number, t: number): Float32Array | null {
   if (!bloques || bloques.length < 2) return null
@@ -137,11 +143,34 @@ export function interpolarBloque(bloques: Float32Array[], limite: number, t: num
   while (k + 1 < tope && bloques[k + 1][0] <= t) k++
   const a = bloques[k]
   const b = bloques[Math.min(k + 1, tope)]
-  const tramo = b[0] - a[0]
-  const alpha = tramo > 0 ? Math.min(Math.max((t - a[0]) / tramo, 0), 1) : 0
+  const h = b[0] - a[0]
+  const u = h > 0 ? Math.min(Math.max((t - a[0]) / h, 0), 1) : 0
+  const u2 = u * u
+  const u3 = u2 * u
+  // Base de Hermite: h00, h10, h01, h11.
+  const h00 = 2 * u3 - 3 * u2 + 1
+  const h10 = u3 - 2 * u2 + u
+  const h01 = -2 * u3 + 3 * u2
+  const h11 = u3 - u2
+  // Derivadas para la velocidad (respecto a t real: se divide entre h).
+  const d00 = (6 * u2 - 6 * u) / (h > 0 ? h : 1)
+  const d10 = (3 * u2 - 4 * u + 1)
+  const d01 = (-6 * u2 + 6 * u) / (h > 0 ? h : 1)
+  const d11 = (3 * u2 - 2 * u)
   const salida = new Float32Array(a.length)
   salida[0] = t
-  for (let i = 1; i < a.length; i++) salida[i] = a[i] + (b[i] - a[i]) * alpha
+  const n = Math.floor((a.length - 1) / FLOTANTES_POR_CUERPO)
+  for (let i = 0; i < n; i++) {
+    const o = 1 + i * FLOTANTES_POR_CUERPO
+    for (let e = 0; e < 3; e++) {
+      const p0 = a[o + e]
+      const v0 = a[o + 3 + e]
+      const p1 = b[o + e]
+      const v1 = b[o + 3 + e]
+      salida[o + e] = h00 * p0 + h10 * h * v0 + h01 * p1 + h11 * h * v1
+      salida[o + 3 + e] = d00 * p0 + d10 * v0 + d01 * p1 + d11 * v1
+    }
+  }
   return salida
 }
 

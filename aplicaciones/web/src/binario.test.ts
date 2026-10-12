@@ -58,6 +58,17 @@ describe('protocolo binario v1', () => {
     expect(saltoDeBucle(bloques, limite)).toBeLessThan(2)
   })
 
+  it('hermite es exacta en los nodos (posicion y velocidad)', () => {
+    const a = new Float32Array([0, 0, 0, 0, 10, 0, 0])
+    const b = new Float32Array([10, 100, 0, 0, 20, 0, 0])
+    const ini = interpolarBloque([a, b], 1, 0)!
+    const fin = interpolarBloque([a, b], 1, 10)!
+    expect(ini[1]).toBeCloseTo(0, 6)
+    expect(ini[4]).toBeCloseTo(10, 6)
+    expect(fin[1]).toBeCloseTo(100, 6)
+    expect(fin[4]).toBeCloseTo(20, 6)
+  })
+
   it('salto cero en órbita cerrada y grande si se trunca', () => {
     const bloques: Float32Array[] = []
     for (let k = 0; k <= 64; k++) {

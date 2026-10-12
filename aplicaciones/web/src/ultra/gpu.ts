@@ -432,6 +432,9 @@ export async function montarUltra(
       })
     }
     // Fundido de empalme: mezcla la foto previa durante ~1 s.
+    // La estela registra la física CRUDA (pre-fundido): si no, cada empalme
+    // dibuja un rizo fantasma en la trayectoria.
+    const cCruda = c.slice()
     if (tFondo < 1 && fondo && fondo.length === c.length) {
       tFondo = Math.min(1, tFondo + dtMs / 1000)
       const s = tFondo * tFondo * (3 - 2 * tFondo)
@@ -459,10 +462,12 @@ export async function montarUltra(
     }
 
     // Estelas: un punto cada 2 frames (~20 s de historia a 60 fps).
+    // Se registra la física cruda (sin fundido) con su marca temporal.
     tikEstela += 1
     if (!pausado && tikEstela % 2 === 0) {
+      const ahoraEstela = performance.now()
       visuales.forEach((_v, i) => {
-        empujarEstela(estelas[i], [c[i * 4], c[i * 4 + 1], c[i * 4 + 2]])
+        empujarEstela(estelas[i], [cCruda[i * 4], cCruda[i * 4 + 1], cCruda[i * 4 + 2]], ahoraEstela)
       })
     }
     const vertsEstela: number[] = []
@@ -543,9 +548,19 @@ export async function montarUltra(
     fijarVelocidad: (v: number) => { velocidad = v },
     seleccionar: (id: string | null) => { seleccionado = id },
     fijarFuente: (f: FuenteEstados | null, limpiar = true) => {
-      // Foto previa para el fundido de empalme (~1 s, sin saltos).
-      fondo = ultimosCentros.slice()
-      tFondo = 0
+      // Fundido SOLO al Lanzar o montar (limpiar=true: cambió el escenario).
+      // En encadenados la semilla ES el estado actual interpolado: el primer
+      // fotograma del tramo nuevo coincide con el último pintado, así que
+      // fundir solo metería un frenazo fantasma de 1 s (más visible a alta
+      // velocidad, donde pasa mucho tiempo sim durante el fundido).
+      if (limpiar) {
+        // Foto previa para el fundido de empalme (~1 s, sin saltos).
+        fondo = ultimosCentros.slice()
+        tFondo = 0
+      } else {
+        fondo = null
+        tFondo = 1
+      }
       bloques = f && f.bloques.length >= 2 ? f.bloques : null
       escalaFuente = f?.escala ?? 1
       tiempoFuente = 0
