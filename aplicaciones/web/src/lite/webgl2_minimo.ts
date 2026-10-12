@@ -149,6 +149,11 @@ export interface ControlLite {
   fijarVelocidad: (v: number) => void
   /** Cambia la fuente (`limpiar=false` conserva estelas en encadenados). */
   fijarFuente: (f: FuenteEstados | null, limpiar?: boolean) => void
+  /** Añade bloques del stream (sin resetear el reloj). */
+  anexarBloques: (nuevos: Float32Array[]) => void
+  /** Poda bloques con t < `mantenerDesde` (memoria acotada). */
+  podar: (mantenerDesde: number) => void
+  /** Segundos simulados actuales (para el reloj de la barra). */
   leerTiempo: () => number
   leerProgreso: () => number
   leerBloqueActual: () => Float32Array | null
@@ -477,6 +482,20 @@ export function montarLite(
       if (limpiar) for (const e of estelas) e.puntos.length = 0
     },
     leerTiempo: () => spinLite,
+    anexarBloques: (nuevos: Float32Array[]) => {
+      if (!bloques || nuevos.length === 0) return
+      bloques.push(...nuevos)
+      limiteBucle = detectarLimiteBucle(bloques ?? [], visuales.length)
+    },
+    podar: (mantenerDesde: number) => {
+      if (!bloques || bloques.length === 0) return
+      let cortar = 0
+      while (cortar < bloques.length - 2 && bloques[cortar][0] < mantenerDesde) cortar++
+      if (cortar > 0) {
+        bloques.splice(0, cortar)
+        limiteBucle = detectarLimiteBucle(bloques ?? [], visuales.length)
+      }
+    },
     leerProgreso: () => {
       const { ini, fin } = rangoLite()
       const span = fin - ini

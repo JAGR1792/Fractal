@@ -3,7 +3,11 @@
 //! Escucha en `127.0.0.1:3000` por defecto (`PUERTO` lo cambia).
 //! Permite CORS abierto para que Vite (`:5173`) llame en desarrollo.
 
-use fractal_api::{almacen::Almacen, crear_app};
+use fractal_api::{
+    almacen::Almacen,
+    crear_app,
+    sesion::{Sesiones, lanzar_recolector},
+};
 use tower_http::cors::CorsLayer;
 
 #[tokio::main]
@@ -11,7 +15,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().with_env_filter("fractal_api=debug,tower_http=info").init();
 
     let almacen = Almacen::nuevo();
-    let app = crear_app(almacen).layer(CorsLayer::permissive());
+    let sesiones = Sesiones::nuevo();
+    lanzar_recolector(sesiones.clone());
+    let app = crear_app(almacen, sesiones).layer(CorsLayer::permissive());
 
     let puerto: u16 =
         std::env::var("PUERTO").ok().and_then(|texto| texto.parse().ok()).unwrap_or(3000);

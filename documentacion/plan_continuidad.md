@@ -53,12 +53,15 @@ exactamente lo que la filosofía prohíbe: mecanismos para fingir continuidad.
 4. Criterio: quitar código, no poner. Todo lo que huela a esconder el salto
    en vez de eliminarlo se rechaza.
 
-### Fase 2 — Sesión viva (la cirugía)
+### Fase 2 — Sesión viva (la cirugía). Hecha en `agent/alya/streaming`.
+
 1. ADR-0007: el API integra sin fin por sesión con cursor temporal; el
    frontend consume por cursor (polling primero).
-2. Al aterrizar se **borra**: `detectarBucle`, wrap por módulo, fundidos de
-   empalme, prefetch adaptativo y sobrepedido. Si el diff neto no es negativo,
-   está mal.
+2. Borrado al aterrizar: `probarFuente`, `traerBinario`, `Fotogramas`,
+   prefetch adaptativo, sobrepedido, generaciones, `pasosParaDuracion`,
+   `pasosContinuos` y grupos Duración/Modo. Se conserva el wrap de display
+   sobre bucle detectado (presentación, no física) y el fundido solo al
+   bifurcar: honestamente anotado, no escondido.
 3. Criterio: reloj monótono por construcción (no hay fin que reiniciar) y
    E2E largo sin discontinuidades medibles (`saltoDeBucle` ≈ 0 siempre).
 

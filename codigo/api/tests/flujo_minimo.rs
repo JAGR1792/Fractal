@@ -3,7 +3,7 @@
 //! Usa `axum-test` contra el router en memoria (sin puerto real).
 
 use axum_test::TestServer;
-use fractal_api::{almacen::Almacen, crear_app, modelos::PeticionSimulacion};
+use fractal_api::{almacen::Almacen, crear_app, modelos::PeticionSimulacion, sesion::Sesiones};
 use fractal_fisica::{cuerpo::Cuerpo, vector::Vec3};
 use serde_json::Value;
 
@@ -29,7 +29,7 @@ fn peticion_dos_cuerpos() -> PeticionSimulacion {
 
 #[tokio::test]
 async fn salud_responde_bien() {
-    let servidor = TestServer::new(crear_app(Almacen::nuevo())).unwrap();
+    let servidor = TestServer::new(crear_app(Almacen::nuevo(), Sesiones::nuevo())).unwrap();
     let respuesta = servidor.get("/salud").await;
     respuesta.assert_status_ok();
     let cuerpo: Value = respuesta.json();
@@ -38,7 +38,7 @@ async fn salud_responde_bien() {
 
 #[tokio::test]
 async fn crear_y_leer_simulacion() {
-    let servidor = TestServer::new(crear_app(Almacen::nuevo())).unwrap();
+    let servidor = TestServer::new(crear_app(Almacen::nuevo(), Sesiones::nuevo())).unwrap();
 
     let crear = servidor.post("/api/v1/simulaciones").json(&peticion_dos_cuerpos()).await;
     crear.assert_status(axum::http::StatusCode::ACCEPTED);
@@ -80,8 +80,49 @@ async fn crear_y_leer_simulacion() {
 
 #[tokio::test]
 async fn rechaza_peticion_invalida() {
-    let servidor = TestServer::new(crear_app(Almacen::nuevo())).unwrap();
+    let servidor = TestServer::new(crear_app(Almacen::nuevo(), Sesiones::nuevo())).unwrap();
     let mala =
         PeticionSimulacion { cuerpos: vec![], dt: -1.0, pasos: 0, cada_n: 0, suavizado: 0.0 };
     servidor.post("/api/v1/simulaciones").json(&mala).await.assert_status_bad_request();
+}
+
+#[tokio::test]
+async fn sesion_viva_con_cursor_y_patch() {
+    let servidor = TestServer::new(crear_app(Almacen::nuevo(), Sesiones::nuevo())).unwrap();
+
+    let crear = servidor.post("/api/v1/sesiones").json(&peticion_dos_cuerpos()).await;
+    crear.assert_status(axum::http::StatusCode::CREATED);
+    let creada: Value = crear.json();
+    let id = creada["id"].as_str().unwrap().to_string();
+    assert_eq!(creada["cuerpos"], 2);
+
+    // Primera lectura desde t=0 (integra bajo demanda).
+    let leer1 = servidor.get(&format!("/api/v1/sesiones/{id}/estados?desde=0&limite=50")).await;
+    leer1.assert_status_ok();
+    let hasta1: f64 = leer1.headers()["x-fractal-hasta"].to_str().unwrap().parse().unwrap();
+    assert!(hasta1 > 0.0);
+
+    // Segunda lectura desde el cursor: solo lo nuevo, sin repetir.
+    let leer2 =
+        servidor.get(&format!("/api/v1/sesiones/{id}/estados?desde={hasta1}&limite=50")).await;
+    leer2.assert_status_ok();
+    let hasta2: f64 = leer2.headers()["x-fractal-hasta"].to_str().unwrap().parse().unwrap();
+    assert!(hasta2 >= hasta1);
+
+    // PATCH en caliente + DELETE.
+    servidor
+        .patch(&format!("/api/v1/sesiones/{id}"))
+        .json(&serde_json::json!({ "dt": 300.0 }))
+        .await
+        .assert_status_ok();
+    servidor
+        .patch(&format!("/api/v1/sesiones/{id}"))
+        .json(&serde_json::json!({ "masas": { "luna": -5.0 } }))
+        .await
+        .assert_status_bad_request();
+    servidor
+        .delete(&format!("/api/v1/sesiones/{id}"))
+        .await
+        .assert_status(axum::http::StatusCode::NO_CONTENT);
+    servidor.get(&format!("/api/v1/sesiones/{id}/estados?desde=0")).await.assert_status_not_found();
 }

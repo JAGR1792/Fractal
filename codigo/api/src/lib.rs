@@ -18,5 +18,6 @@ pub mod almacen;
 pub mod binario;
 pub mod modelos;
 pub mod rutas;
+pub mod sesion;
 
 pub use rutas::crear_app;

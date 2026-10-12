@@ -4,37 +4,15 @@
  */
 import type { CuerpoVisual } from './escenario'
 
-/** Edición del usuario sobre un cuerpo del escenario. */
+/** Edición del usuario: lo que cambia en vivo (sesión continua, sin tramos). */
 export interface EdicionSandbox {
   cuerpoId: string
   masa: number
   vx: number
   vy: number
   dt: number
-  /** Duración simulada en días (se ignora si `infinito`). */
-  duracionDias: number
-  /** Sin fin: encadena tramos para siempre con trozos fijos. */
-  infinito: boolean
   /** Suavizado gravitacional ε en metros (0 = Newton puro). */
   suavizado: number
-}
-
-/** Pasos necesarios para cubrir `dias` con paso `dt` (mínimo 50). */
-export function pasosParaDuracion(dias: number, dt: number): number {
-  if (!(dt > 0)) return 50
-  return Math.max(50, Math.round((dias * 86400) / dt))
-}
-
-/**
- * Pasos por tramo en modo continuo: ~4.8e6 s de física (≈ dos meses lunares,
- * ≥2 órbitas de la Luna) con el `dt` dado. Dos órbitas garantizan que el
- * detector de bucle siempre encuentre un cierre real en vez de caer al
- * último bloque (causa raíz del salto de ~5° por ciclo).
- * Acotado para no colgar el servidor ni encadenar a cada rato.
- */
-export function pasosContinuos(dt: number): number {
-  if (!(dt > 0)) return 8000
-  return Math.min(30000, Math.max(1000, Math.round(4.8e6 / dt)))
 }
 
 /** Textos de telemetría (`null` = guiones). */
@@ -77,8 +55,6 @@ function leerEdicion(raiz: HTMLElement): EdicionSandbox {
     vx: num('sbVxNum'),
     vy: num('sbVyNum'),
     dt: num('sbDtNum'),
-    duracionDias: num('sbDurNum'),
-    infinito: (raiz.querySelector('#sbInf') as HTMLInputElement)?.checked ?? false,
     suavizado: num('sbSuavNum'),
   }
 }
@@ -125,7 +101,6 @@ export function montarSandbox(
   contenedor: HTMLElement,
   cuerpos: CuerpoVisual[],
   dt: number,
-  duracionDias: number,
   alCambiar: (ed: EdicionSandbox) => void,
 ): {
   fijarEstado: (msg: string) => void
@@ -152,11 +127,6 @@ export function montarSandbox(
     '<div class="grupo"><span class="titulo">dt (s)</span><div class="fila">' +
     '<input id="sbDt" type="range" min="10" max="3600" step="10" />' +
     '<input id="sbDtNum" type="number" min="10" max="3600" step="10" /></div></div>' +
-    '<div class="grupo"><span class="titulo">Duración (días)</span><div class="fila">' +
-    '<input id="sbDur" type="range" min="1" max="120" step="1" />' +
-    '<input id="sbDurNum" type="number" min="1" max="120" step="1" /></div></div>' +
-    '<div class="grupo"><span class="titulo">Modo</span><div class="fila">' +
-    '<label><input id="sbInf" type="checkbox" checked /> Continuo ∞</label></div></div>' +
     '<div class="grupo"><span class="titulo">Suavizado (m)</span><div class="fila">' +
     '<input id="sbSuav" type="range" min="0" max="7" step="0.1" />' +
     '<input id="sbSuavNum" type="number" min="0" max="1e7" step="any" /></div></div>' +
@@ -175,7 +145,6 @@ export function montarSandbox(
   parSincronizado(contenedor, 'sbVx', 'sbVxNum', identico, identico)
   parSincronizado(contenedor, 'sbVy', 'sbVyNum', identico, identico)
   parSincronizado(contenedor, 'sbDt', 'sbDtNum', identico, identico)
-  parSincronizado(contenedor, 'sbDur', 'sbDurNum', identico, identico)
   const sel = contenedor.querySelector('#sbCuerpo') as HTMLSelectElement
   // Por defecto, el último cuerpo (suele ser el que orbita: telemetría viva).
   if (cuerpos.length > 1) sel.value = cuerpos[cuerpos.length - 1].id
@@ -187,7 +156,6 @@ export function montarSandbox(
     ;(contenedor.querySelector(`#${idNum}`) as HTMLInputElement).value = String(v)
   }
   sembrar('sbDt', 'sbDtNum', dt)
-  sembrar('sbDur', 'sbDurNum', duracionDias)
   sembrar('sbSuav', 'sbSuavNum', 0)
   refrescar(contenedor, cuerpos)
 
