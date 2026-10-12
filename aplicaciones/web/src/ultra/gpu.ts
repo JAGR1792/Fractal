@@ -2,7 +2,7 @@
 import { camaraInicial, conectarControles, invertir, matrizProyeccion, matrizVista, multiplicar, ojoDeCamara, rayoDesdePantalla, tocaEsfera, type EstadoCamara } from '../camara'
 import { aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, tipoPlaneta, urlTextura, type CuerpoVisual } from '../escenario'
 import type { FuenteEstados } from '../api'
-import { detectarLimiteBucle, interpolarBloque } from '../binario'
+import { interpolarBloque } from '../binario'
 import planetaWGSL from './sombreadores/planeta.wgsl?raw'
 import orbitaWGSL from './sombreadores/orbita.wgsl?raw'
 import puntosWGSL from './sombreadores/puntos.wgsl?raw'
@@ -22,8 +22,7 @@ export interface ControlUltra {
   alternarPausa: () => void
   fijarVelocidad: (v: number) => void
   seleccionar: (id: string | null) => void
-  /** Cambia la fuente de fotogramas en vivo (`null` = demo local). */
-  /** Cambia la fuente (`limpiar=false` conserva estelas en encadenados). */
+  /** Cambia la fuente (`limpiar=false` conserva estelas). */
   fijarFuente: (f: FuenteEstados | null, limpiar?: boolean) => void
   /** Añade bloques del stream (sin resetear el reloj). */
   anexarBloques: (nuevos: Float32Array[]) => void
@@ -31,8 +30,6 @@ export interface ControlUltra {
   podar: (mantenerDesde: number) => void
   /** Segundos simulados actuales (para el reloj de la barra). */
   leerTiempo: () => number
-  /** Fracción 0..1 del tramo actual (para encadenar antes del final). */
-  leerProgreso: () => number
   /** Posiciones SI actuales (para bifurcar sin saltos). `null` si no hay. */
   leerPosicionesActuales: () => number[] | null
   /** Bloque completo interpolado al instante actual (t + xyz + vxvyvz). */
@@ -287,7 +284,6 @@ export async function montarUltra(
   const tituloBase = document.title
   const t0 = performance.now()
   let ultimoMs = t0
-  let tiempoFuente = 0
   // Segundos SIMULADOS para la rotación propia (ver periodoRotacion en WGSL).
   let spinSim = 0
   let ultimosCentros: Float32Array = centros
@@ -353,25 +349,19 @@ export async function montarUltra(
   window.addEventListener('keydown', alTecla)
 
   // Servidor: interpola entre fotogramas binarios si hay historial válido.
+  // Sin módulo ni bucle: el playback persigue la frontera del stream y se
+  // detiene en el borde hasta que llegan más datos. Ritmo: una órbita lunar
+  // de referencia (~2.4e6 s) cada 20 s de pared a velocidad 1x.
+  const RITMO_SIM = 120000
   let bloques: Float32Array[] | null = fuente && fuente.bloques.length >= 2 ? fuente.bloques : null
   let escalaFuente = fuente?.escala ?? 1
-  // Último bloque del bucle: primera órbita completa del cuerpo 1 alrededor
-  // del 0 (detectada por ángulo). Loopear ahí es física continua hacia
-  // adelante: sin saltos y sin viajes en el tiempo.
-  let limiteBucle = 0
+  let tiempoFuente = bloques ? bloques[0][0] : 0
 
-  function detectarBucle(): number {
-    return detectarLimiteBucle(bloques ?? [], visuales.length)
+  /** Techo de reproducción: tercer bloque desde el final (margen de 2). */
+  function techoFuente(): number {
+    if (!bloques || bloques.length < 3) return -Infinity
+    return bloques[bloques.length - 3][0]
   }
-
-  function rangoFuente(): { ini: number; fin: number } {
-    if (!bloques || bloques.length < 2) return { ini: 0, fin: 0 }
-    const fin = bloques[Math.min(limiteBucle, bloques.length - 1)][0]
-    return { ini: bloques[0][0], fin }
-  }
-
-  // El bucle se calcula una vez por fuente (montaje y cada fijarFuente).
-  limiteBucle = detectarBucle()
   // Si se monta YA con servidor, el fondo es el círculo demo (ángulo 0):
   // el primer segundo interpola demo→física real, sin salto único.
   if (bloques) {
@@ -382,7 +372,7 @@ export async function montarUltra(
   /** Escribe en `c` los centros interpolados del instante `t` (segundos sim). */
   function centrosServidor(c: Float32Array, t: number): void {
     if (!bloques) return
-    const b = interpolarBloque(bloques, limiteBucle, t)
+    const b = interpolarBloque(bloques, bloques.length - 1, t)
     if (!b) return
     visuales.forEach((_v, i) => {
       const base = 1 + i * 6
@@ -410,16 +400,16 @@ export async function montarUltra(
     }
     if (!pausado) angulo += 0.002 * velocidad
     const c = new Float32Array(centros)
-    const { ini: tIni, fin: tFin } = rangoFuente()
-    const hayServidor = bloques !== null && tFin > tIni
+    const hayServidor = bloques !== null && bloques.length >= 2
     if (hayServidor) {
-      // Física real hacia adelante: el bucle cierra una órbita completa
-      // (ver detectarBucle), así el reinicio es invisible.
-      const span = tFin - tIni
-      const avance = !pausado ? (dtMs / 1000) * velocidad * (span / 20) : 0
-      tiempoFuente += avance
-      spinSim += avance
-      const t = tIni + ((tiempoFuente % span) + span) % span
+      // Persigue la frontera: avanza a ritmo fijo y espera en el borde.
+      const techo = techoFuente()
+      let t = tiempoFuente
+      if (!pausado && techo > t) {
+        t = Math.min(t + (dtMs / 1000) * velocidad * RITMO_SIM, techo)
+      }
+      spinSim += t - tiempoFuente
+      tiempoFuente = t
       centrosServidor(c, t)
     } else {
       // Demo local sin servidor: 1440 s sim por segundo real (la tierra
@@ -552,11 +542,7 @@ export async function montarUltra(
     fijarVelocidad: (v: number) => { velocidad = v },
     seleccionar: (id: string | null) => { seleccionado = id },
     fijarFuente: (f: FuenteEstados | null, limpiar = true) => {
-      // Fundido SOLO al Lanzar o montar (limpiar=true: cambió el escenario).
-      // En encadenados la semilla ES el estado actual interpolado: el primer
-      // fotograma del tramo nuevo coincide con el último pintado, así que
-      // fundir solo metería un frenazo fantasma de 1 s (más visible a alta
-      // velocidad, donde pasa mucho tiempo sim durante el fundido).
+      // Fundido SOLO al bifurcar o montar (limpiar=true: cambió el escenario).
       if (limpiar) {
         // Foto previa para el fundido de empalme (~1 s, sin saltos).
         fondo = ultimosCentros.slice()
@@ -567,25 +553,20 @@ export async function montarUltra(
       }
       bloques = f && f.bloques.length >= 2 ? f.bloques : null
       escalaFuente = f?.escala ?? 1
-      tiempoFuente = 0
-      limiteBucle = detectarBucle()
-      // Solo al Lanzar se limpia: en encadenados la estela continúa.
+      tiempoFuente = bloques ? bloques[0][0] : 0
+      // Solo al bifurcar se limpia: en stream la estela es historia continua.
       if (limpiar) for (const e of estelas) e.puntos.length = 0
     },
     leerSeleccion: () => seleccionado,
     leerTiempo: () => spinSim,
     leerBloqueActual: () => {
       if (!bloques || bloques.length < 2) return null
-      const { ini, fin } = rangoFuente()
-      const span = fin - ini
-      if (span <= 0) return null
-      const t = ini + ((tiempoFuente % span) + span) % span
-      return interpolarBloque(bloques, limiteBucle, t)
+      const t = Math.min(tiempoFuente, techoFuente())
+      return interpolarBloque(bloques, bloques.length - 1, t)
     },
     anexarBloques: (nuevos: Float32Array[]) => {
       if (!bloques || nuevos.length === 0) return
       bloques.push(...nuevos)
-      limiteBucle = detectarBucle()
     },
     podar: (mantenerDesde: number) => {
       if (!bloques || bloques.length === 0) return
@@ -593,7 +574,7 @@ export async function montarUltra(
       while (cortar < bloques.length - 2 && bloques[cortar][0] < mantenerDesde) cortar++
       if (cortar > 0) {
         bloques.splice(0, cortar)
-        limiteBucle = detectarBucle()
+        if (tiempoFuente < bloques[0][0]) tiempoFuente = bloques[0][0]
       }
     },
     leerPosicionesActuales: () => {
@@ -606,12 +587,6 @@ export async function montarUltra(
         salida.push(ultimosCentros[i * 4] / e, ultimosCentros[i * 4 + 2] / e, ultimosCentros[i * 4 + 1] / e)
       })
       return salida
-    },
-    leerProgreso: () => {
-      const { ini, fin } = rangoFuente()
-      const span = fin - ini
-      if (bloques === null || span <= 0) return 0
-      return Math.min(Math.max(tiempoFuente / span, 0), 1)
     },
     destruir: () => {
       vivo = false
