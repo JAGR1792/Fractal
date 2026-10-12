@@ -34,6 +34,28 @@ export function pasosContinuos(dt: number): number {
   return Math.min(20000, Math.max(500, Math.round(2.4e6 / dt)))
 }
 
+/** Textos de telemetría (`null` = guiones). */
+export interface TextoTelemetria {
+  dist: string | null
+  vel: string | null
+  sma: string | null
+  ecc: string | null
+  periodo: string | null
+}
+
+/** Pinta la telemetría del drawer (o guiones si no hay). */
+export function pintarTelemetria(raiz: HTMLElement, t: TextoTelemetria | null): void {
+  const poner = (id: string, v: string | null): void => {
+    const el = raiz.querySelector(`#${id}`) as HTMLElement | null
+    if (el) el.textContent = v ?? '—'
+  }
+  poner('sbTDist', t?.dist ?? null)
+  poner('sbTVel', t?.vel ?? null)
+  poner('sbTSma', t?.sma ?? null)
+  poner('sbTEcc', t?.ecc ?? null)
+  poner('sbTPer', t?.periodo ?? null)
+}
+
 /** Clona los visuales aplicando la edición (puro, testeable). */
 export function aplicarEdicion(visuales: CuerpoVisual[], ed: EdicionSandbox): CuerpoVisual[] {
   return visuales.map((c) =>
@@ -135,6 +157,13 @@ export function montarSandbox(
     '<div class="grupo"><span class="titulo">Suavizado (m)</span><div class="fila">' +
     '<input id="sbSuav" type="range" min="0" max="7" step="0.1" />' +
     '<input id="sbSuavNum" type="number" min="0" max="1e7" step="any" /></div></div>' +
+    '</div>' +
+    '<div class="sb-grid sb-tele" aria-label="Telemetría del cuerpo elegido">' +
+    '<div class="grupo"><span class="titulo">Distancia</span><span class="val" id="sbTDist">—</span></div>' +
+    '<div class="grupo"><span class="titulo">Velocidad</span><span class="val" id="sbTVel">—</span></div>' +
+    '<div class="grupo"><span class="titulo">Semieje</span><span class="val" id="sbTSma">—</span></div>' +
+    '<div class="grupo"><span class="titulo">Excentricidad</span><span class="val" id="sbTEcc">—</span></div>' +
+    '<div class="grupo"><span class="titulo">Período</span><span class="val" id="sbTPer">—</span></div>' +
     '</div>'
 
   const identico = (v: number): number => v

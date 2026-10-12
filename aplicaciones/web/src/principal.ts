@@ -1,7 +1,8 @@
 import { elegirPerfil, type PerfilRender } from './detector'
 import { cargarEscenario, aVisual, type CuerpoVisual, type Escenario } from './escenario'
 import { probarFuente, visualesConPosiciones, visualesDesdeBloque, type FuenteEstados } from './api'
-import { montarSandbox, aplicarEdicion, pasosContinuos, pasosParaDuracion, type EdicionSandbox } from './sandbox'
+import { montarSandbox, aplicarEdicion, pasosContinuos, pasosParaDuracion, pintarTelemetria, type EdicionSandbox } from './sandbox'
+import { elementosOrbitales, formatearDistancia, G } from './mecanica'
 
 /**
  * Entrada web Fractal ULTRA/LITE.
@@ -79,6 +80,29 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
       const t = control.leerTiempo?.()
       reloj.textContent = t === undefined ? '—' : `T+ ${formatearTiempo(t)}`
     }
+    // Telemetría viva del cuerpo elegido (física del servidor).
+    if (cajaSandbox) {
+      const selId = (document.getElementById('sbCuerpo') as HTMLSelectElement | null)?.value ?? ''
+      const blk = control.leerBloqueActual?.() ?? null
+      const idx = base.findIndex((c) => c.id === selId)
+      if (blk && idx > 0 && base.length > 0) {
+        const o = 1 + idx * 6
+        const el = elementosOrbitales(
+          [blk[o] - blk[1], blk[o + 1] - blk[2], blk[o + 2] - blk[3]],
+          [blk[o + 3] - blk[4], blk[o + 4] - blk[5], blk[o + 5] - blk[6]],
+          G * base[0].masa,
+        )
+        pintarTelemetria(cajaSandbox, el ? {
+          dist: formatearDistancia(el.distancia),
+          vel: `${(el.velocidad / 1000).toFixed(2)} km/s`,
+          sma: el.sma !== null ? formatearDistancia(el.sma) : 'abierta',
+          ecc: el.excentricidad.toFixed(3),
+          periodo: el.periodo !== null ? formatearTiempo(el.periodo) : '—',
+        } : null)
+      } else {
+        pintarTelemetria(cajaSandbox, null)
+      }
+    }
     if (encadenando || !fuente || !control.fijarFuente || !control.leerProgreso) return
     // En modo finito, al cubrir lo pedido se deja de encadenar: el tramo
     // final queda en bucle. En continuo, para siempre.
@@ -121,15 +145,16 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   const btnSandbox = document.getElementById('btnSandbox') as HTMLButtonElement | null
   btnSandbox?.addEventListener('click', () => cajaSandbox?.classList.toggle('cerrado'))
 
-  // Tabla accesible con escenario local (alternativa a 3D)
-  if (vis.length > 0) {
+  // Tabla accesible (alternativa a 3D): se redibuja con cada lanzamiento.
+  const renderizarTabla = (lista: CuerpoVisual[]): void => {
     const tabla = document.getElementById('tabla')
-    if (tabla) {
+    if (tabla && lista.length > 0) {
       tabla.innerHTML =
         '<tr><th>Cuerpo</th><th>Masa (kg)</th><th>Posición (m)</th></tr>' +
-        vis.map((c) => `<tr><td>${c.nombre}</td><td>${c.masa.toExponential(2)}</td><td>${c.posicion.map((v) => v.toExponential(1)).join(', ')}</td></tr>`).join('')
+        lista.map((c) => `<tr><td>${c.nombre}</td><td>${c.masa.toExponential(2)}</td><td>${c.posicion.map((v) => v.toExponential(1)).join(', ')}</td></tr>`).join('')
     }
   }
+  renderizarTabla(vis)
 
   // Panel sandbox: edita en vivo y relanza contra el API (ULTRA con fuente viva).
   if (cajaSandbox && vis.length > 0) {
@@ -158,6 +183,7 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
           duracionSeg: ed.duracionDias * 86400,
         }
         control.fijarFuente(nueva)
+        renderizarTabla(editados)
         panel?.fijarEstado(`tramo 1 · listo: ${nueva.bloques.length} fotogramas`)
       } else {
         panel?.fijarEstado('sin servidor (demo local)')
