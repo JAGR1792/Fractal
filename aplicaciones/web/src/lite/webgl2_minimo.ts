@@ -8,7 +8,7 @@ import { camaraInicial, conectarControles, matrizProyeccion, matrizVista, multip
 import { crearEstela, empujarEstela, generarEstrellas, type Estela } from '../estelas'
 import { crearSistema, actualizar as actualizarChispas, aIntercalado as chispasIntercaladas, explotar as explotarChispas, puedeExplotar as puedeExplotarChispas } from '../particulas'
 import { detectarImpactos } from '../mecanica'
-import { detectarLimiteBucle, interpolarBloque } from '../binario'
+import { interpolarBloque } from '../binario'
 import type { FuenteEstados } from '../api'
 
 const VS = `#version 300 es
@@ -155,7 +155,6 @@ export interface ControlLite {
   podar: (mantenerDesde: number) => void
   /** Segundos simulados actuales (para el reloj de la barra). */
   leerTiempo: () => number
-  leerProgreso: () => number
   leerBloqueActual: () => Float32Array | null
   leerPosicionesActuales: () => number[] | null
   destruir: () => void
@@ -268,12 +267,13 @@ export function montarLite(
   let vivo = true
   let spinLite = 0
   let ultimoMs = performance.now()
-  let tiempoFuente = 0
 
   // Fuente del servidor (igual que ULTRA): interpola fotogramas binarios.
+  // Sin módulo ni bucle: persigue la frontera y espera en el borde.
+  const RITMO_SIM = 120000
   let bloques: Float32Array[] | null = fuente && fuente.bloques.length >= 2 ? fuente.bloques : null
   let escalaFuente = fuente?.escala ?? 1
-  let limiteBucle = detectarLimiteBucle(bloques ?? [], visuales.length)
+  let tiempoFuente = bloques ? bloques[0][0] : 0
   // Fundido de empalme (~1 s) sobre las posiciones del frame previo.
   // Si se monta YA con servidor, el fondo es el círculo demo (ángulo 0).
   let fondoPos: Array<[number, number, number]> | null = bloques
@@ -285,16 +285,16 @@ export function montarLite(
   let ultimaPos: Array<[number, number, number]> = []
   let tFondo = bloques ? 0 : 1
 
-  function rangoLite(): { ini: number; fin: number } {
-    if (!bloques || bloques.length < 2) return { ini: 0, fin: 0 }
-    const fin = bloques[Math.min(limiteBucle, bloques.length - 1)][0]
-    return { ini: bloques[0][0], fin }
+  /** Techo de reproducción: tercer bloque desde el final (margen de 2). */
+  function techoFuente(): number {
+    if (!bloques || bloques.length < 3) return -Infinity
+    return bloques[bloques.length - 3][0]
   }
 
   /** Posiciones mundo de todos los cuerpos este frame (servidor o demo). */
   function posiciones(t: number): Array<[number, number, number]> {
     if (bloques) {
-      const b = interpolarBloque(bloques, limiteBucle, t)
+      const b = interpolarBloque(bloques, bloques.length - 1, t)
       if (b) {
         return visuales.map((_v, i) => {
           const o = 1 + i * 6
@@ -325,13 +325,14 @@ export function montarLite(
     }
     gl.viewport(0, 0, lienzo.width, lienzo.height)
     if (!pausado) angulo += 0.004 * velocidad
-    const { ini: tIni, fin: tFin } = rangoLite()
-    const span = tFin - tIni
-    const hayServidor = bloques !== null && span > 0
+    const hayServidor = bloques !== null && bloques.length >= 2
     let t = 0
     if (hayServidor) {
-      if (!pausado) tiempoFuente += (dtS) * velocidad * (span / 20)
-      t = tIni + ((tiempoFuente % span) + span) % span
+      const techo = techoFuente()
+      if (!pausado && techo > tiempoFuente) {
+        tiempoFuente = Math.min(tiempoFuente + dtS * velocidad * RITMO_SIM, techo)
+      }
+      t = tiempoFuente
       spinLite = t
     } else if (!pausado) {
       spinLite += dtS * velocidad * 1440 // segundos sim (ver periodo en GLSL)
@@ -466,8 +467,7 @@ export function montarLite(
     alternarPausa: () => { pausado = !pausado },
     fijarVelocidad: (v: number) => { velocidad = v },
     fijarFuente: (f: FuenteEstados | null, limpiar = true) => {
-      // Fundido SOLO al Lanzar (limpiar=true). En encadenados la semilla es
-      // el estado actual: fundir frenaría la Luna 1 s en cada tramo.
+      // Fundido SOLO al bifurcar (limpiar=true: cambió el escenario).
       if (limpiar) {
         fondoPos = ultimaPos.map((p) => [p[0], p[1], p[2]] as [number, number, number])
         tFondo = 0
@@ -475,17 +475,16 @@ export function montarLite(
         fondoPos = null
         tFondo = 1
       }
-      bloques = f && f.bloques.length >= 2 ? f.bloques : null
+      bloques = f && f.bloques.length >= 2 ? [...f.bloques] : null
+      // COPIA, no referencia (ver ULTRA: compartir duplicaba y sobrepodaba).
       escalaFuente = f?.escala ?? 1
-      tiempoFuente = 0
-      limiteBucle = detectarLimiteBucle(bloques ?? [], visuales.length)
+      tiempoFuente = bloques ? bloques[0][0] : 0
       if (limpiar) for (const e of estelas) e.puntos.length = 0
     },
     leerTiempo: () => spinLite,
     anexarBloques: (nuevos: Float32Array[]) => {
       if (!bloques || nuevos.length === 0) return
       bloques.push(...nuevos)
-      limiteBucle = detectarLimiteBucle(bloques ?? [], visuales.length)
     },
     podar: (mantenerDesde: number) => {
       if (!bloques || bloques.length === 0) return
@@ -493,33 +492,20 @@ export function montarLite(
       while (cortar < bloques.length - 2 && bloques[cortar][0] < mantenerDesde) cortar++
       if (cortar > 0) {
         bloques.splice(0, cortar)
-        limiteBucle = detectarLimiteBucle(bloques ?? [], visuales.length)
+        if (tiempoFuente < bloques[0][0]) tiempoFuente = bloques[0][0]
       }
-    },
-    leerProgreso: () => {
-      const { ini, fin } = rangoLite()
-      const span = fin - ini
-      if (bloques === null || span <= 0) return 0
-      return Math.min(Math.max(tiempoFuente / span, 0), 1)
     },
     leerBloqueActual: () => {
       if (!bloques || bloques.length < 2) return null
-      const { ini, fin } = rangoLite()
-      const span = fin - ini
-      if (span <= 0) return null
-      const t = ini + ((tiempoFuente % span) + span) % span
-      return interpolarBloque(bloques, limiteBucle, t)
+      return interpolarBloque(bloques, bloques.length - 1, tiempoFuente)
     },
     leerPosicionesActuales: () => {
       // Deshace el mapeo mundo [x*e, z*e, y*e] → SI (igual en demo y servidor,
       // porque posMundo usa la misma convención que la fuente).
       const e = bloques ? escalaFuente : escalaMundo(visuales)
       if (!(e > 0)) return null
-      const { ini, fin } = rangoLite()
-      const span = fin - ini
-      const t = bloques && span > 0 ? ini + ((tiempoFuente % span) + span) % span : 0
       const salida: number[] = []
-      for (const [x, y, z] of posiciones(t)) salida.push(x / e, z / e, y / e)
+      for (const [x, y, z] of posiciones(tiempoFuente)) salida.push(x / e, z / e, y / e)
       return salida
     },
     destruir: () => { vivo = false; desconectar() },
