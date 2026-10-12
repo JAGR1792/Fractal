@@ -270,9 +270,15 @@ export function montarLite(
   let escalaFuente = fuente?.escala ?? 1
   let limiteBucle = detectarLimiteBucle(bloques ?? [], visuales.length)
   // Fundido de empalme (~1 s) sobre las posiciones del frame previo.
-  let fondoPos: Array<[number, number, number]> | null = null
+  // Si se monta YA con servidor, el fondo es el círculo demo (ángulo 0).
+  let fondoPos: Array<[number, number, number]> | null = bloques
+    ? visuales.map((c) => {
+        const p0 = posMundo.get(c.id) ?? [10, 0, 0]
+        return [p0[0], p0[1], p0[2]]
+      })
+    : null
   let ultimaPos: Array<[number, number, number]> = []
-  let tFondo = 1
+  let tFondo = bloques ? 0 : 1
 
   function rangoLite(): { ini: number; fin: number } {
     if (!bloques || bloques.length < 2) return { ini: 0, fin: 0 }

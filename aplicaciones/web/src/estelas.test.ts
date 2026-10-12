@@ -4,9 +4,19 @@ import { aSegmentos, crearEstela, empujarEstela, generarEstrellas } from './este
 describe('estelas y estrellas', () => {
   it('recorta las más viejas', () => {
     const e = crearEstela(3)
-    for (let i = 0; i < 5; i++) empujarEstela(e, [i, 0, 0])
+    for (let i = 0; i < 5; i++) empujarEstela(e, [i, 0, 0], i * 16)
     expect(e.puntos).toHaveLength(3)
     expect(e.puntos[0][0]).toBe(2)
+  })
+
+  it('corta la recta fantasma tras una pausa larga', () => {
+    const e = crearEstela(10)
+    empujarEstela(e, [0, 0, 0], 0)
+    empujarEstela(e, [1, 0, 0], 16)
+    empujarEstela(e, [50, 0, 0], 10000)
+    const segs = aSegmentos(e, [1, 0, 0])
+    // Solo el primer segmento sobrevive; el salto de 10 s se corta.
+    expect(segs).toHaveLength(14)
   })
 
   it('segmentos con alpha creciente', () => {

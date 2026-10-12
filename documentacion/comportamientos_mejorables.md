@@ -19,9 +19,12 @@ a empezar. Muy notorio mirando la Luna.
 - La transición demo local → primera fuente también salta (círculo falso vs
   física real).
 
-**Arreglo planeado:** precarga más temprana + tramos más largos (varias
-órbitas por pedido), fundido de 1 s en el empalme, y transición demo→server
-desde el círculo al estado real con interpolación.
+**Arreglo aplicado (2026-10-12, rama `dev`):** detector por mejor-empalme
+(mínimo saltoDeBucle entre candidatos con ≥0.9 órbitas, umbral viejo
+2π−0.05 eliminado) + tramos continuos de ~2 órbitas (`pasosContinuos`
+4.8e6/dt) para que el cierre siempre exista + fundido de 1 s ya presente
+en empalmes y montaje inicial. Pendiente de verificación en vivo con API
+en `:3000` mirando la Luna un ciclo completo.
 
 **Cómo reproducirlo:** `?perfil=ultra` con API en `:3000`, velocidad 1x,
 mirar la Luna ~20 s hasta el salto.
@@ -34,9 +37,10 @@ loco o temblando sin sentido.
 **Causa:** N-cuerpos directo O(N²) sin suavizado gravitacional (softening ε)
 ni manejo de colisiones; `dt` fijo de 600 s es enorme para encuentros.
 
-**Arreglo planeado:** parámetro `suavizado` en el motor (`a = Gm/(r²+ε²)^1.5`),
-expuesto en el API y el sandbox, con tests de conservación; a futuro `dt`
-adaptativo y fusiones.
+**Estado (2026-10-12):** suavizado implementado end-to-end (motor
+`calcular_aceleraciones_suavizadas` + `paso_velocity_verlet_con` + validación
+en API + control en el sandbox). Verificado con tests de conservación.
+Queda: recomendar ε por defecto en la UI y `dt` adaptativo a futuro.
 
 ## 3. Estelas con huecos tras pausas largas
 
@@ -46,8 +50,10 @@ el tiempo con una recta.
 **Causa:** el anillo guarda posiciones sin marca temporal; al reanudar se
 conecta el antes con el después.
 
-**Arreglo planeado:** guardar `t` por punto y cortar el segmento si el salto
-temporal supera el paso esperado.
+**Arreglo aplicado (2026-10-12, rama `dev`):** cada punto de estela guarda
+su marca temporal y `aSegmentos` corta el segmento si el salto supera 500 ms.
+Tests: recta fantasma tras pausa de 10 s. Pendiente de verificación en vivo
+(pausar 1 min y reanudar).
 
 ## 4. Transición demo → servidor
 
@@ -56,5 +62,8 @@ falso a la física real a los ~2-4 s.
 
 **Causa:** la demo arranca al instante; la fuente llega después y reemplaza.
 
-**Arreglo planeado:** arrancar pausado en el círculo hasta que llegue la
-fuente, o interpolar demo→server en 1 s.
+**Arreglo aplicado (2026-10-12, rama `dev`):** al montar YA con servidor,
+el fondo del fundido se siembra con el círculo demo (ULTRA y LITE): el primer
+segundo interpola demo→física real en vez de saltar. Los encadenados ya
+usaban fundido sin limpiar estelas. Pendiente de verificación en vivo
+(arranque con API en `:3000`).

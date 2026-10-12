@@ -26,12 +26,15 @@ export function pasosParaDuracion(dias: number, dt: number): number {
 }
 
 /**
- * Pasos por tramo en modo continuo: ~2.4e6 s de física (≈ un mes) con el
- * `dt` dado, acotado para no colgar el servidor ni encadenar a cada rato.
+ * Pasos por tramo en modo continuo: ~4.8e6 s de física (≈ dos meses lunares,
+ * ≥2 órbitas de la Luna) con el `dt` dado. Dos órbitas garantizan que el
+ * detector de bucle siempre encuentre un cierre real en vez de caer al
+ * último bloque (causa raíz del salto de ~5° por ciclo).
+ * Acotado para no colgar el servidor ni encadenar a cada rato.
  */
 export function pasosContinuos(dt: number): number {
-  if (!(dt > 0)) return 4000
-  return Math.min(20000, Math.max(500, Math.round(2.4e6 / dt)))
+  if (!(dt > 0)) return 8000
+  return Math.min(30000, Math.max(1000, Math.round(4.8e6 / dt)))
 }
 
 /** Textos de telemetría (`null` = guiones). */

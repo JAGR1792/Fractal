@@ -1,12 +1,17 @@
 /**
  * Estelas y estrellas puras (sin GPU): lógica testeable del render.
- * Las estelas guardan las últimas posiciones MUNDO de cada cuerpo;
- * las estrellas son puntos fijos en un cascarón lejano.
+ * Las estelas guardan las últimas posiciones MUNDO de cada cuerpo con su
+ * marca temporal; al pausar y reanudar se corta el segmento en vez de unir
+ * puntos lejanos con una recta (ver mejorables §3).
+ * Las estrellas son puntos fijos en un cascarón lejano.
  */
+
+/** Un punto de estela con marca temporal (ms de performance.now()). */
+export type PuntoEstela = [number, number, number, number]
 
 /** Una estela: anillo de posiciones recientes de un cuerpo. */
 export interface Estela {
-  puntos: Array<[number, number, number]>
+  puntos: PuntoEstela[]
   maximo: number
 }
 
@@ -15,9 +20,12 @@ export function crearEstela(maximo: number): Estela {
   return { puntos: [], maximo }
 }
 
-/** Empuja una posición (clona); recorta las más viejas. Devuelve la estela. */
-export function empujarEstela(e: Estela, p: [number, number, number]): Estela {
-  e.puntos.push([p[0], p[1], p[2]])
+/**
+ * Empuja una posición con su marca temporal (clona); recorta las más viejas.
+ * `t` por defecto es `performance.now()`; en tests se pasa explícito.
+ */
+export function empujarEstela(e: Estela, p: [number, number, number], t = performance.now()): Estela {
+  e.puntos.push([p[0], p[1], p[2], t])
   while (e.puntos.length > e.maximo) e.puntos.shift()
   return e
 }
@@ -27,16 +35,22 @@ export type VerticeLinea = [number, number, number, number, number, number, numb
 
 /**
  * Convierte una estela en segmentos para line-list: del más viejo (alpha 0)
- * al más nuevo (alpha 1), con el color del cuerpo.
+ * al más nuevo (alpha 1), con el color del cuerpo. Corta el segmento cuando
+ * el salto temporal supera `saltoMaxMs` (pausa larga → sin recta fantasma).
  */
-export function aSegmentos(e: Estela, color: [number, number, number]): number[] {
+export function aSegmentos(
+  e: Estela,
+  color: [number, number, number],
+  saltoMaxMs = 500,
+): number[] {
   const salida: number[] = []
   const n = e.puntos.length
   for (let i = 0; i + 1 < n; i++) {
-    const a0 = i / n
-    const a1 = (i + 1) / n
     const p = e.puntos[i]
     const q = e.puntos[i + 1]
+    if (q[3] - p[3] > saltoMaxMs) continue
+    const a0 = i / n
+    const a1 = (i + 1) / n
     salida.push(p[0], p[1], p[2], color[0], color[1], color[2], a0)
     salida.push(q[0], q[1], q[2], color[0], color[1], color[2], a1)
   }

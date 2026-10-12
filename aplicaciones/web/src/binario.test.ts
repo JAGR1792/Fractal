@@ -44,6 +44,20 @@ describe('protocolo binario v1', () => {
     expect(medio[9]).toBeCloseTo(0, 3)
   })
 
+  it('ventana de 0.985 órbitas cierra en el mejor empalme', () => {
+    // La ventana por defecto del escenario dos_cuerpos cubría 0.985 órbitas:
+    // el detector viejo (2π−0.05) fallaba siempre. El nuevo devuelve el
+    // mejor empalme (mínimo salto) en vez del último bloque arbitrario.
+    const bloques: Float32Array[] = []
+    for (let k = 0; k <= 62; k++) {
+      const a = (k / 64) * Math.PI * 2
+      bloques.push(new Float32Array([k, 0, 0, 0, 0, 0, 0, 10 * Math.cos(a), 0, 10 * Math.sin(a), 0, 0, 0]))
+    }
+    const limite = detectarLimiteBucle(bloques, 2)
+    expect(limite).toBe(62)
+    expect(saltoDeBucle(bloques, limite)).toBeLessThan(2)
+  })
+
   it('salto cero en órbita cerrada y grande si se trunca', () => {
     const bloques: Float32Array[] = []
     for (let k = 0; k <= 64; k++) {

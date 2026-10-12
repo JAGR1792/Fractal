@@ -368,6 +368,12 @@ export async function montarUltra(
 
   // El bucle se calcula una vez por fuente (montaje y cada fijarFuente).
   limiteBucle = detectarBucle()
+  // Si se monta YA con servidor, el fondo es el círculo demo (ángulo 0):
+  // el primer segundo interpola demo→física real, sin salto único.
+  if (bloques) {
+    fondo = centros.slice()
+    tFondo = 0
+  }
 
   /** Escribe en `c` los centros interpolados del instante `t` (segundos sim). */
   function centrosServidor(c: Float32Array, t: number): void {

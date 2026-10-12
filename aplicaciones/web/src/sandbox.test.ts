@@ -24,9 +24,9 @@ describe('panel sandbox', () => {
     expect(pasosParaDuracion(27, 0)).toBe(50)
   })
 
-  it('tramo continuo de ~un mes según dt', () => {
-    expect(pasosContinuos(600)).toBe(4000)
-    expect(pasosContinuos(0)).toBe(4000)
-    expect(pasosContinuos(1)).toBe(20000)
+  it('tramo continuo de ~dos meses según dt (≥2 órbitas)', () => {
+    expect(pasosContinuos(600)).toBe(8000)
+    expect(pasosContinuos(0)).toBe(8000)
+    expect(pasosContinuos(1)).toBe(30000)
   })
 })

@@ -55,6 +55,11 @@ export function partirBloques(datos: Float32Array, cuerpos: number): Float32Arra
  * Último bloque de la primera órbita completa del cuerpo 1 alrededor del 0.
  * Loopear ahí es física continua hacia adelante (sin saltos ni rebobinados).
  * Revisa los planos XY/XZ/YZ porque cada escenario orbita en el suyo.
+ *
+ * Robusto ante ventanas que no cierran la órbita exacta (p. ej. 0.985
+ * órbitas): en vez de exigir 2π−0.05 estricto, busca el MEJOR empalme
+ * (mínimo saltoDeBucle) entre los candidatos con ≥0.9 órbitas acumuladas.
+ * Así el wrap es el salto más pequeño posible, no un corte arbitrario.
  */
 export function detectarLimiteBucle(bloques: Float32Array[], nCuerpos: number): number {
   if (!bloques || bloques.length < 3 || nCuerpos < 2) {
@@ -68,6 +73,17 @@ export function detectarLimiteBucle(bloques: Float32Array[], nCuerpos: number): 
   const angulo = (b: Float32Array, p: [number, number, number, number]): number =>
     Math.atan2(b[p[3]] - b[p[1]], b[p[2]] - b[p[0]])
   const estado = planos.map((p) => ({ p, previo: angulo(bloques[0], p), acum: 0 }))
+  let mejor = bloques.length - 1
+  let mejorSalto = Infinity
+  const medir = (k: number): number => {
+    const a = bloques[0]
+    const b = bloques[k]
+    if (a.length < 13 || b.length < 13) return Math.hypot(b[1] - a[1], b[2] - a[2], b[3] - a[3])
+    const dx = (b[7] - b[1]) - (a[7] - a[1])
+    const dy = (b[8] - b[2]) - (a[8] - a[2])
+    const dz = (b[9] - b[3]) - (a[9] - a[3])
+    return Math.hypot(dx, dy, dz)
+  }
   for (let k = 1; k < bloques.length; k++) {
     const b = bloques[k]
     for (const s of estado) {
@@ -77,10 +93,19 @@ export function detectarLimiteBucle(bloques: Float32Array[], nCuerpos: number): 
       if (d < -Math.PI) d += 2 * Math.PI
       s.acum += d
       s.previo = a
-      if (Math.abs(s.acum) >= 2 * Math.PI - 0.05) return k
+      // Candidato: casi una vuelta o más; nos quedamos con el menor salto.
+      // Se recorre TODO (n~200, barato) porque el primer candidato rara vez
+      // es el mejor: el mínimo global es el empalme más invisible.
+      if (Math.abs(s.acum) >= 2 * Math.PI - 0.6) {
+        const salto = medir(k)
+        if (salto < mejorSalto) {
+          mejorSalto = salto
+          mejor = k
+        }
+      }
     }
   }
-  return bloques.length - 1
+  return mejor
 }
 
 /**
