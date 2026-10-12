@@ -1,21 +1,19 @@
 /**
- * Cliente del API Fractal (Etapa 3).
+ * Cliente del API Fractal: sesiones vivas con cursor (ADR-0007).
  *
- * Orquesta el flujo sandbox: crea la simulación desde un escenario local,
- * espera a que el background termine y trae los fotogramas binarios.
- * Todo fallo devuelve `null`: el render usa la demo local (sin servidor).
+ * El servidor integra sin fin; el frontend avanza un cursor temporal por
+ * polling. Todo fallo devuelve `null`/`false`: demo local sin servidor.
  */
-import { traerBinario, type Fotogramas } from './binario'
 import type { CuerpoVisual } from './escenario'
-import { escalaMundo } from './escenario'
+import { VERSION_BINARIO } from './binario'
 
-/** Fuente de fotogramas del servidor para `montarUltra`. */
+/** Fuente de fotogramas del servidor para los renderers. */
 export interface FuenteEstados {
   /** Bloques como vistas (ver `partirBloques`), con `bloques[i][0]` = tiempo. */
   bloques: Float32Array[]
   /** Factor mundo (misma escala que `normalizarPosiciones`). */
   escala: number
-  /** Milisegundos que tardó el cálculo (para el prefetch adaptativo). */
+  /** Reservado (compatibilidad con versiones de tramo). */
   tCalculoMs: number
 }
 
@@ -85,58 +83,73 @@ export function visualesConPosiciones(base: CuerpoVisual[], pos: number[]): Cuer
   }))
 }
 
-function esperar(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms))
+/** Bloques cada ~12000 s de sim (independiente del dt). */
+export function cadaNPara(dt: number): number {
+  if (!(dt > 0)) return 20
+  return Math.min(1000, Math.max(1, Math.round(12000 / dt)))
 }
 
-/**
- * Intenta traer fotogramas del servidor para los visuales dados.
- * Devuelve `null` si el API no responde (demo local como fallback).
- */
-export async function probarFuente(
+/** Sesión viva del servidor (ver ADR-0007). */
+export interface SesionCliente {
+  id: string
+  cuerpos: number
+}
+
+/** Crea una sesión viva desde visuales (integra bajo demanda). */
+export async function crearSesion(
+  base: string,
   visuales: CuerpoVisual[],
   dt: number,
-  pasos: number,
-  suavizado = 0,
-): Promise<FuenteEstados | null> {
-  const base = baseApi()
+  suavizado: number,
+): Promise<SesionCliente | null> {
   try {
-    const ctrl = new AbortController()
-    const fuera = setTimeout(() => ctrl.abort(), 1500)
-    const salud = await fetch(`${base}/salud`, { signal: ctrl.signal }).catch(() => null)
-    clearTimeout(fuera)
-    if (!salud || !salud.ok) return null
-
-    // Sobrepedido ×1.3: la ventana debe cubrir más de una órbita para que
-    // el detector de bucle cierre con margen (ver detectarLimiteBucle).
-    const pasosFx = Math.ceil(pasos * 1.3)
-    const cadaN = Math.max(1, Math.floor(pasosFx / 200))
-    const tIni = performance.now()
-    const crear = await fetch(`${base}/api/v1/simulaciones`, {
+    const res = await fetch(`${base}/api/v1/sesiones`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(aPeticion(visuales, dt, pasosFx, cadaN, suavizado)),
+      body: JSON.stringify(aPeticion(visuales, dt, 1200, cadaNPara(dt), suavizado)),
     })
-    if (crear.status !== 202) return null
-    const { id } = (await crear.json()) as { id: string }
-
-    for (let i = 0; i < 200; i++) {
-      const ficha = await fetch(`${base}/api/v1/simulaciones/${id}`).catch(() => null)
-      if (!ficha || !ficha.ok) return null
-      const info = (await ficha.json()) as { estado: string }
-      if (info.estado === 'completada') break
-      if (info.estado === 'fallida') return null
-      await esperar(300)
-    }
-    const foto: Fotogramas = await traerBinario(base, id, 0, 500)
-    if (foto.bloques < 2) return null
-    const { partirBloques } = await import('./binario')
-    return {
-      bloques: partirBloques(foto.datos, foto.cuerpos),
-      escala: escalaMundo(visuales),
-      tCalculoMs: performance.now() - tIni,
-    }
+    if (res.status !== 201) return null
+    return (await res.json()) as SesionCliente
   } catch {
     return null
+  }
+}
+
+/** Lee lo nuevo desde el cursor `desde` (tiempo sim). */
+export async function leerSesion(
+  base: string,
+  id: string,
+  desde: number,
+  limite = 200,
+): Promise<{ bloques: Float32Array[]; hasta: number; cuerpos: number } | null> {
+  try {
+    const res = await fetch(`${base}/api/v1/sesiones/${id}/estados?desde=${desde}&limite=${limite}`)
+    if (!res.ok) return null
+    if (res.headers.get('x-fractal-version') !== String(VERSION_BINARIO)) return null
+    const cuerpos = Number(res.headers.get('x-fractal-cuerpos') ?? '0')
+    const hasta = Number(res.headers.get('x-fractal-hasta') ?? String(desde))
+    if (!Number.isFinite(cuerpos) || cuerpos < 1 || !Number.isFinite(hasta)) return null
+    const { partirBloques } = await import('./binario')
+    return { bloques: partirBloques(new Float32Array(await res.arrayBuffer()), cuerpos), hasta, cuerpos }
+  } catch {
+    return null
+  }
+}
+
+/** Cambia masas/dt/suavizado en caliente sobre la sesión viva. */
+export async function actualizarSesion(
+  base: string,
+  id: string,
+  cambios: { masas?: Record<string, number>; dt?: number; suavizado?: number },
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${base}/api/v1/sesiones/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(cambios),
+    })
+    return res.ok
+  } catch {
+    return false
   }
 }
