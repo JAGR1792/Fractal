@@ -47,7 +47,27 @@ Fractal/
 - [x] ADRs de arquitectura
 - [x] CI/CD con GitHub Actions
 
-**Etapa 1 — Motor físico mínimo:** próxima
+**Etapa 1 — Motor físico:** completada
+
+- [x] N-cuerpos con Velocity Verlet + tests científicos
+- [x] Suavizado gravitacional ε + conservación verificada
+
+**Etapa 2 — Render ULTRA/LITE:** completada
+
+- [x] WebGPU instanciado + WebGL2 de respaldo, sin motores
+- [x] Texturas NASA vendorizadas, rotación propia, picking con seguimiento
+- [x] Estelas vivas, estrellas, telemetría orbital en vivo
+
+**Etapa 3 — API + sandbox:** en curso
+
+- [x] Axum + jobs en background, protocolo binario `Float32Array`
+- [x] Sandbox con parámetros en vivo, flujo infinito encadenado
+- [ ] Persistencia, compartir por link, modo en vivo con debounce
+- [ ] Streaming continuo (diseño en `documentacion/plan_continuidad.md`)
+
+**Mejorable (siempre al día):** ver
+[`documentacion/comportamientos_mejorables.md`](documentacion/comportamientos_mejorables.md)
+y [`documentacion/pasos_siguientes.md`](documentacion/pasos_siguientes.md).
 
 ## Cómo contribuir
 
