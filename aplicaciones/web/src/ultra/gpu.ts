@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { camaraInicial, conectarControles, invertir, matrizProyeccion, matrizVista, multiplicar, ojoDeCamara, rayoDesdePantalla, tocaEsfera, type EstadoCamara } from '../camara'
-import { aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, tipoPlaneta, urlTextura, type CuerpoVisual } from '../escenario'
+import { aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, slotTextura, tipoPlaneta, NUM_TEXTURAS, TEXTURAS_POR_ID, type CuerpoVisual } from '../escenario'
 import type { FuenteEstados } from '../api'
 import { interpolarBloque } from '../binario'
 import planetaWGSL from './sombreadores/planeta.wgsl?raw'
@@ -181,20 +181,28 @@ export async function montarUltra(
   new Float32Array(bufUV.getMappedRange()).set(esfera.uvs)
   bufUV.unmap()
 
-  // Texturas vendorizadas (tierra/luna). El catálogo vive en escenario.ts
-  // para que el sandbox registre más planetas (ver public/texturas/LEEME.md).
-  const texTierra: any = await cargarTextura(device, urlTextura('tierra') ?? '', [0.12, 0.3, 0.75, 1])
-  const texLuna: any = await cargarTextura(device, urlTextura('luna') ?? '', [0.62, 0.62, 0.66, 1])
+  // Texturas vendorizadas por slot (ver TEXTURAS_POR_ID en escenario.ts
+  // y public/texturas/LEEME.md). El orden del arreglo es el slot.
+  const entradas = Object.values(TEXTURAS_POR_ID).sort((a, b) => a.slot - b.slot)
+  if (entradas.length !== NUM_TEXTURAS) {
+    console.warn(`[fractal/ultra] catálogo con ${entradas.length} texturas, se esperaban ${NUM_TEXTURAS}`)
+  }
+  const texturas: any[] = []
+  for (const e of entradas) {
+    texturas.push(await cargarTextura(device, e.url, [0.5, 0.5, 0.55, 1]))
+  }
   const muestreador: any = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'repeat', addressModeV: 'clamp-to-edge' })
 
-  // Storage: centros (xyz + tipo visual) + datos (radio + color)
+  // Storage: centros (xyz + tipo visual) + datos (radio + color) + slots
   const n = visuales.length
   const centros = new Float32Array(n * 4)
   const datos = new Float32Array(n * 4)
+  const slots = new Uint32Array(n)
   visuales.forEach((c, i) => {
     const p = posMundo.get(c.id) ?? [0, 0, 0]
     centros.set([p[0], p[1], p[2], tipoPlaneta(c.id)], i * 4)
     datos.set([c.radioVisual, c.color[0], c.color[1], c.color[2]], i * 4)
+    slots[i] = slotTextura(c.id) < 0 ? 0xffffffff : slotTextura(c.id)
   })
   const bufCentros: any = device.createBuffer({ size: centros.byteLength, usage: 0x8 | 0x80, mappedAtCreation: true })
   new Float32Array(bufCentros.getMappedRange()).set(centros)
@@ -202,6 +210,9 @@ export async function montarUltra(
   const bufDatos: any = device.createBuffer({ size: datos.byteLength, usage: 0x8 | 0x80, mappedAtCreation: true })
   new Float32Array(bufDatos.getMappedRange()).set(datos)
   bufDatos.unmap()
+  const bufSlots: any = device.createBuffer({ size: Math.max(slots.byteLength, 4), usage: 0x8 | 0x80, mappedAtCreation: true })
+  new Uint32Array(bufSlots.getMappedRange()).set(slots.length ? slots : new Uint32Array([0xffffffff]))
+  bufSlots.unmap()
 
   // Uniformes: viewProj(64) + luzDir(12)+tiempo(4) + camPos(12)+brillo(4) + spin(4)+pad → 128 por alineación
   const bufUni: any = device.createBuffer({ size: 128, usage: 0x40 | 0x8 })
@@ -235,13 +246,14 @@ export async function montarUltra(
   let texProf: any = device.createTexture({ size: [lienzo.width || 800, lienzo.height || 600], sampleCount: 1, format: 'depth24plus', usage: TU.RENDER_ATTACHMENT })
   let vistaProf: any = texProf.createView()
 
+  const vistasTex: any[] = texturas.map((t: any) => t.createView())
   const grupoPlaneta: any = device.createBindGroup({ layout: pipePlaneta.getBindGroupLayout(0), entries: [
     { binding: 0, resource: { buffer: bufUni } },
     { binding: 1, resource: { buffer: bufCentros } },
     { binding: 2, resource: { buffer: bufDatos } },
-    { binding: 3, resource: texTierra.createView() },
-    { binding: 4, resource: texLuna.createView() },
-    { binding: 5, resource: muestreador },
+    ...vistasTex.map((vista: any, k: number) => ({ binding: 3 + k, resource: vista })),
+    { binding: 3 + vistasTex.length, resource: muestreador },
+    { binding: 4 + vistasTex.length, resource: { buffer: bufSlots } },
   ]})
   const grupoOrbita: any = device.createBindGroup({ layout: pipeOrbita.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: bufUni } }]})
 

@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { aVisual, normalizarPosiciones, tipoPlaneta, urlTextura } from './escenario'
+import {
+  aVisual,
+  normalizarPosiciones,
+  NUM_TEXTURAS,
+  slotTextura,
+  TEXTURAS_POR_ID,
+  tipoPlaneta,
+  urlTextura,
+} from './escenario'
 
 describe('escala visual', () => {
   it('separa radio físico de visual', () => {
@@ -37,6 +45,38 @@ describe('escala visual', () => {
   it('resuelve texturas vendorizadas del sandbox', () => {
     expect(urlTextura('tierra')).toBe('/texturas/tierra.jpg')
     expect(urlTextura('LUNA')).toBe('/texturas/luna.jpg')
-    expect(urlTextura('marte')).toBeNull()
+    expect(urlTextura('marte')).toBe('/texturas/marte.jpg')
+    expect(urlTextura('pluton')).toBeNull()
+    expect(slotTextura('tierra')).toBe(0)
+    expect(slotTextura('sol')).toBe(9)
+    expect(slotTextura('pluton')).toBe(-1)
+  })
+
+  it('el catálogo de texturas respeta el contrato de slots', () => {
+    // El shader ULTRA declara un binding por slot y arma el bind group con
+    // `binding: 3 + slot`. Si los slots tuvieran huecos o se repitieran, el
+    // muestreo leería la textura equivocada sin dar ningún error: por eso se
+    // fija aquí como contrato.
+    const entradas = Object.entries(TEXTURAS_POR_ID)
+    expect(entradas).toHaveLength(NUM_TEXTURAS)
+
+    const slots = entradas.map(([, e]) => e.slot).sort((a, b) => a - b)
+    // Contiguos desde 0: 0, 1, 2, ... NUM_TEXTURAS-1 (sin huecos ni repetidos).
+    expect(slots).toEqual(Array.from({ length: NUM_TEXTURAS }, (_v, i) => i))
+
+    // Cada id del catálogo resuelve a su propio slot.
+    for (const [id, entrada] of entradas) {
+      expect(slotTextura(id)).toBe(entrada.slot)
+      expect(urlTextura(id)).toBe(entrada.url)
+    }
+  })
+
+  it('los cuerpos del Sistema Solar tienen textura y el Sol también', () => {
+    // El escenario real debe poder resolver una textura por cuerpo; si un id
+    // se escribe distinto, el planeta cae a color plano sin avisar.
+    for (const id of ['sol', 'mercurio', 'venus', 'tierra', 'marte', 'jupiter', 'saturno', 'urano', 'neptuno']) {
+      expect(slotTextura(id), `${id} sin textura`).toBeGreaterThanOrEqual(0)
+    }
+    expect(slotTextura('luna')).toBeGreaterThanOrEqual(0)
   })
 })
