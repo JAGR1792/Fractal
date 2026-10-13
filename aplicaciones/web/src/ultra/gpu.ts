@@ -159,7 +159,8 @@ export async function montarUltra(
       ]
   const posMundo = normalizarPosiciones(visuales)
 
-  const cam: EstadoCamara = camaraInicial(70)
+  // Sistemas grandes (p. ej. 9 cuerpos) arrancan más lejos para encuadrar.
+  const cam: EstadoCamara = camaraInicial(visuales.length > 3 ? 130 : 70)
   // Los controles mutan `cam`; la matriz de vista se recalcula cada fotograma
   // (ver `const vista = matrizVista(cam)` en el bucle), así que no hace falta
   // ninguna invalidación diferida aquí.

@@ -263,6 +263,7 @@ export function montarLite(
   cargarEscenario(urlEscenario).then((esc) => {
     visuales = aVisual(esc)
     posMundo = normalizarPosiciones(visuales)
+    if (visuales.length > 3) cam.distancia = 120
   }).catch(() => undefined)
 
   let pausado = false

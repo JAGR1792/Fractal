@@ -119,11 +119,11 @@ export function montarSandbox(
     '<input id="sbMasa" type="range" min="20" max="31" step="0.1" />' +
     '<input id="sbMasaNum" type="number" min="1e20" max="1e31" step="any" /></div></div>' +
     '<div class="grupo"><span class="titulo">Vx (m/s)</span><div class="fila">' +
-    '<input id="sbVx" type="range" min="-30000" max="30000" step="50" />' +
-    '<input id="sbVxNum" type="number" min="-30000" max="30000" step="50" /></div></div>' +
+    '<input id="sbVx" type="range" min="-50000" max="50000" step="50" />' +
+    '<input id="sbVxNum" type="number" min="-50000" max="50000" step="50" /></div></div>' +
     '<div class="grupo"><span class="titulo">Vy (m/s)</span><div class="fila">' +
-    '<input id="sbVy" type="range" min="-30000" max="30000" step="50" />' +
-    '<input id="sbVyNum" type="number" min="-30000" max="30000" step="50" /></div></div>' +
+    '<input id="sbVy" type="range" min="-50000" max="50000" step="50" />' +
+    '<input id="sbVyNum" type="number" min="-50000" max="50000" step="50" /></div></div>' +
     '<div class="grupo"><span class="titulo">dt (s)</span><div class="fila">' +
     '<input id="sbDt" type="range" min="10" max="3600" step="10" />' +
     '<input id="sbDtNum" type="number" min="10" max="3600" step="10" /></div></div>' +

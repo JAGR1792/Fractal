@@ -12,6 +12,20 @@ import { montarSandbox, aplicarEdicion, pintarTelemetria, type EdicionSandbox } 
 import { elementosDeCuerpo, formatearDistancia } from './mecanica'
 
 /**
+ * Escenarios disponibles (id → etiqueta). El id viaja en `?escenario=`;
+ * cualquier otro valor cae al primero (Tierra-Luna).
+ */
+export const ESCENARIOS: Record<string, string> = {
+  dos_cuerpos: 'Tierra-Luna',
+  sistema_solar: 'Sistema Solar',
+}
+
+function escenarioPedido(): string {
+  const pedido = new URLSearchParams(window.location.search).get('escenario') ?? ''
+  return pedido in ESCENARIOS ? pedido : 'dos_cuerpos'
+}
+
+/**
  * Entrada web Fractal ULTRA/LITE con sesiones vivas (ADR-0007).
  *
  * El servidor integra sin fin; el frontend avanza un cursor temporal por
@@ -39,10 +53,12 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   }
 
   // Escenario local una sola vez (config + tabla + base del sandbox).
+  const escenarioId = escenarioPedido()
+  const urlEscenario = `/datos/${escenarioId}.json`
   let esc: Escenario | null = null
   let vis: CuerpoVisual[] = []
   try {
-    esc = await cargarEscenario('/datos/dos_cuerpos.json')
+    esc = await cargarEscenario(urlEscenario)
     vis = aVisual(esc)
   } catch {
     /* sin escenario: el render usa su demo interna */
@@ -61,10 +77,21 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
 
   if (perfil === 'ultra') {
     const { montarUltra } = await import('./ultra/gpu')
-    control = await montarUltra(lienzo, '/datos/dos_cuerpos.json', null)
+    control = await montarUltra(lienzo, urlEscenario, null)
   } else {
     const { montarLite } = await import('./lite/webgl2_minimo')
-    control = montarLite(lienzo, '/datos/dos_cuerpos.json', null)
+    control = montarLite(lienzo, urlEscenario, null)
+  }
+
+  // Selector de escenario: cambia `?escenario=` y recarga.
+  const selEsc = document.getElementById('selEscenario') as HTMLSelectElement | null
+  if (selEsc) {
+    selEsc.value = escenarioId
+    selEsc.addEventListener('change', () => {
+      const params = new URLSearchParams(window.location.search)
+      params.set('escenario', selEsc.value)
+      window.location.search = params.toString()
+    })
   }
 
   const btn = document.getElementById('btnPausa') as HTMLButtonElement | null
