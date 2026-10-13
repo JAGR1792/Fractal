@@ -31,6 +31,62 @@ export function crearFrontera(bloques: Float32Array[] | null): Frontera {
 }
 
 /**
+ * Segundos de simulación por segundo de pared a velocidad 1x, para que el
+ * sistema se VEA moverse.
+ *
+ * Un ritmo fijo no sirve para todos los escenarios: calibrado para la órbita
+ * lunar (2,36e6 s) daba ~20 s por vuelta, que está bien; pero en el Sistema
+ * Solar los planetas exteriores recorrían 1e-4 grados por fotograma y parecían
+ * congelados (Neptuno tardaba 12 horas de reloj en dar una vuelta).
+ *
+ * El criterio es el mismo que usa `cadaNPara` para el muestreo: tomar como
+ * referencia una vuelta del cuerpo principal. Aquí, que esa vuelta tarde
+ * `segundosPorVuelta` de pared a 1x. Ocho segundos dejan la vuelta completa
+ * visible sin que el planeta parpadee entre fotogramas, y el deslizador de
+ * velocidad permite alejarse de ahí en ambos sentidos.
+ */
+export const SEGUNDOS_POR_VUELTA = 8
+
+/** Ritmo de reproducción para un período orbital de referencia (segundos sim). */
+export function ritmoParaPeriodo(periodoSim: number): number {
+  if (!(periodoSim > 0) || !Number.isFinite(periodoSim)) return RITMO_SIM_POR_DEFECTO
+  return periodoSim / SEGUNDOS_POR_VUELTA
+}
+
+/**
+ * Ritmo por defecto: el del escenario Tierra-Luna (una órbita lunar de 2,36e6 s
+ * cada ~20 s de pared). Se usa hasta que el escenario dice su período real.
+ */
+export const RITMO_SIM_POR_DEFECTO = 2_360_448 / SEGUNDOS_POR_VUELTA
+
+/** Vuelta al Sol del planeta más interno, o `null` si no se puede calcular. */
+export function periodoDelSistema(
+  cuerpos: Array<{ posicion: [number, number, number]; masa: number }>,
+): number | null {
+  if (cuerpos.length < 2) return null
+  // Masa central: el cuerpo más masivo (el Sol en el Sistema Solar).
+  let centro = 0
+  for (let i = 1; i < cuerpos.length; i++) {
+    if (cuerpos[i].masa > cuerpos[centro].masa) centro = i
+  }
+  const G = 6.6743e-11
+  let menor = Infinity
+  for (let i = 0; i < cuerpos.length; i++) {
+    if (i === centro) continue
+    const r = Math.hypot(
+      cuerpos[i].posicion[0] - cuerpos[centro].posicion[0],
+      cuerpos[i].posicion[1] - cuerpos[centro].posicion[1],
+      cuerpos[i].posicion[2] - cuerpos[centro].posicion[2],
+    )
+    if (!(r > 0)) continue
+    // Tercera ley de Kepler: T = 2π√(r³/GM).
+    const t = 2 * Math.PI * Math.sqrt((r * r * r) / (G * cuerpos[centro].masa))
+    if (t < menor) menor = t
+  }
+  return Number.isFinite(menor) ? menor : null
+}
+
+/**
  * Techo de reproducción: tercer bloque desde el final (margen de 2) o el
  * mayor ya visto. `-Infinity` si aún no hay historial suficiente para
  * interpolar con exactitud.

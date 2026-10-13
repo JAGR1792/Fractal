@@ -10,6 +10,7 @@ import {
 } from './api'
 import { montarSandbox, aplicarEdicion, pintarTelemetria, type EdicionSandbox } from './sandbox'
 import { elementosDeCuerpo, formatearDistancia } from './mecanica'
+import { periodoDelSistema, ritmoParaPeriodo, SEGUNDOS_POR_VUELTA } from './frontera'
 
 /**
  * Escenarios disponibles (id → etiqueta). El id viaja en `?escenario=`;
@@ -43,6 +44,8 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   let control: {
     alternarPausa: () => void
     fijarVelocidad: (v: number) => void
+    fijarRitmo?: (ritmo: number) => void
+    leerRitmo?: () => number
     fijarFuente?: (f: FuenteEstados | null, limpiar?: boolean) => void
     anexarBloques?: (nuevos: Float32Array[]) => void
     podar?: (mantenerDesde: number) => void
@@ -65,6 +68,11 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   }
   const dt0 = esc?.parametros?.dt ?? 600
 
+  // Ritmo de reproducción según el sistema: una vuelta del cuerpo principal
+  // cada `SEGUNDOS_POR_VUELTA` de pared a 1x. Con un ritmo fijo, los planetas
+  // exteriores del Sistema Solar apenas se movían y parecían pausados.
+  const periodoSim = vis.length > 1 ? periodoDelSistema(vis) : null
+
   // Sesión viva: el buffer local crece por polling; el render lee por cursor.
   const baseApiUrl = baseApi()
   let sesionId: string | null = null
@@ -77,10 +85,10 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
 
   if (perfil === 'ultra') {
     const { montarUltra } = await import('./ultra/gpu')
-    control = await montarUltra(lienzo, urlEscenario, null)
+    control = await montarUltra(lienzo, urlEscenario, null, periodoSim)
   } else {
     const { montarLite } = await import('./lite/webgl2_minimo')
-    control = montarLite(lienzo, urlEscenario, null)
+    control = montarLite(lienzo, urlEscenario, null, periodoSim)
   }
 
   // Selector de escenario: cambia `?escenario=` y recarga.
@@ -93,6 +101,21 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
       window.location.search = params.toString()
     })
   }
+
+  // Ritmo efectivo en la barra: sin esto no hay forma de saber si lo que se ve
+  // "pausado" es el sistema (mal ritmo) o el reloj.
+  const etiquetaRitmo = document.getElementById('ritmo')
+  const pintarRitmo = (): void => {
+    if (!etiquetaRitmo) return
+    const r = control.leerRitmo?.()
+    if (r === undefined || !Number.isFinite(r)) {
+      etiquetaRitmo.textContent = ''
+      return
+    }
+    const porVuelta = r > 0 ? SEGUNDOS_POR_VUELTA : 0
+    etiquetaRitmo.textContent = `1 s = ${(r / 86400).toFixed(1)} días sim · vuelta en ${porVuelta.toFixed(0)} s`
+  }
+  pintarRitmo()
 
   const btn = document.getElementById('btnPausa') as HTMLButtonElement | null
   btn?.addEventListener('click', () => {
@@ -186,6 +209,13 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
           hasta = 0
           base = editados
           ultimoEnviado = { ...ed }
+          // El sistema cambió (orbitas nuevas): el ritmo se recalcula para que
+          // la vuelta siga siendo visible, no congelada.
+          const periodoNuevo = periodoDelSistema(editados)
+          if (periodoNuevo !== null) {
+            control.fijarRitmo?.(ritmoParaPeriodo(periodoNuevo))
+            pintarRitmo()
+          }
           const primera = await leerSesion(baseApiUrl, sesionId, 0, 300)
           if (primera && primera.bloques.length >= 2) {
             buf = primera.bloques
