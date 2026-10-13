@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { camaraInicial, conectarControles, invertir, matrizProyeccion, matrizVista, multiplicar, ojoDeCamara, rayoDesdePantalla, tocaEsfera, type EstadoCamara } from '../camara'
-import { aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, slotTextura, tipoPlaneta, NUM_TEXTURAS, TEXTURAS_POR_ID, type CuerpoVisual } from '../escenario'
+import { anguloRotacion, aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, slotTextura, tipoPlaneta, NUM_TEXTURAS, TEXTURAS_POR_ID, VELOCIDAD_ROTACION, type CuerpoVisual } from '../escenario'
 import type { FuenteEstados } from '../api'
 import { interpolarBloque } from '../binario'
 import planetaWGSL from './sombreadores/planeta.wgsl?raw'
 import orbitaWGSL from './sombreadores/orbita.wgsl?raw'
 import puntosWGSL from './sombreadores/puntos.wgsl?raw'
 import { aSegmentos, crearEstela, generarEstrellas, PASO_ESTELA_SIM, RegistroEstela, type Estela } from '../estelas'
-import { avanzar, bloqueActual, crearFrontera, reanclar } from '../frontera'
+import { avanzar, bloqueActual, crearFrontera, reanclar, ritmoParaPeriodo } from '../frontera'
 import { actualizar, aIntercalado, crearSistema, explotar, puedeExplotar } from '../particulas'
 import { detectarImpactos } from '../mecanica'
 
@@ -22,6 +22,14 @@ const TU: any = (globalThis as any).GPUTextureUsage ?? { TEXTURE_BINDING: 0x10, 
 export interface ControlUltra {
   alternarPausa: () => void
   fijarVelocidad: (v: number) => void
+  /**
+   * Segundos sim por segundo de pared a velocidad 1x. Se fija según el
+   * escenario (ver `ritmoParaPeriodo`): un ritmo único hacía que los planetas
+   * exteriores del Sistema Solar parecieran congelados.
+   */
+  fijarRitmo: (ritmo: number) => void
+  /** Ritmo de reproducción vigente. */
+  leerRitmo: () => number
   seleccionar: (id: string | null) => void
   /** Cambia la fuente (`limpiar=false` conserva estelas). */
   fijarFuente: (f: FuenteEstados | null, limpiar?: boolean) => void
@@ -128,6 +136,7 @@ export async function montarUltra(
   lienzo: HTMLCanvasElement,
   urlEscenario = '/datos/dos_cuerpos.json',
   fuente: FuenteEstados | null = null,
+  periodoSim: number | null = null,
 ): Promise<ControlUltra> {
   const nav: any = navigator as any
   if (!nav.gpu) throw new Error('sin WebGPU')
@@ -214,6 +223,13 @@ export async function montarUltra(
   new Uint32Array(bufSlots.getMappedRange()).set(slots.length ? slots : new Uint32Array([0xffffffff]))
   bufSlots.unmap()
 
+  // Ángulo de rotación propia por cuerpo. Se recalcula cada fotograma desde el
+  // tiempo sim con el período REAL de cada cuerpo (ver `anguloRotacion`), en
+  // f64 y acotado a [0, 2π): antes el shader multiplicaba el tiempo absoluto y
+  // el argumento del coseno perdía precisión en f32.
+  const giros = new Float32Array(n)
+  const bufGiros: any = device.createBuffer({ size: Math.max(giros.byteLength, 4), usage: 0x8 | 0x80 | 0x10 })
+
   // Uniformes: viewProj(64) + luzDir(12)+tiempo(4) + camPos(12)+brillo(4) + spin(4)+pad → 128 por alineación
   const bufUni: any = device.createBuffer({ size: 128, usage: 0x40 | 0x8 })
   const modPlaneta: any = device.createShaderModule({ code: planetaWGSL })
@@ -254,6 +270,7 @@ export async function montarUltra(
     ...vistasTex.map((vista: any, k: number) => ({ binding: 3 + k, resource: vista })),
     { binding: 3 + vistasTex.length, resource: muestreador },
     { binding: 4 + vistasTex.length, resource: { buffer: bufSlots } },
+    { binding: 5 + vistasTex.length, resource: { buffer: bufGiros } },
   ]})
   const grupoOrbita: any = device.createBindGroup({ layout: pipeOrbita.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: bufUni } }]})
 
@@ -310,6 +327,8 @@ export async function montarUltra(
   let ultimoMs = t0
   // Segundos SIMULADOS para la rotación propia (ver periodoRotacion en WGSL).
   let spinSim = 0
+  /** Reloj propio de la rotación, en tiempo de pared escalado (no simulado). */
+  let relojRotacion = 0
   let ultimosCentros: Float32Array = centros
   const radios = visuales.map((c) => c.radioVisual * 1.2)
   // Fundido de empalme (~1 s): mezcla la imagen previa con la nueva fuente.
@@ -374,9 +393,10 @@ export async function montarUltra(
 
   // Servidor: interpola entre fotogramas binarios si hay historial válido.
   // Sin módulo ni bucle: el playback persigue la frontera del stream y se
-  // detiene en el borde hasta que llegan más datos. Ritmo: una órbita lunar
-  // de referencia (~2.4e6 s) cada 20 s de pared a velocidad 1x.
-  const RITMO_SIM = 120000
+  // detiene en el borde hasta que llegan más datos. El ritmo se ajusta al
+  // sistema (`ritmoParaPeriodo`): con uno fijo, los planetas exteriores del
+  // Sistema Solar se movían 1e-4 grados por fotograma y parecían congelados.
+  let ritmo = ritmoParaPeriodo(periodoSim ?? NaN)
   let escalaFuente = fuente?.escala ?? 1
   const fro = crearFrontera(fuente && fuente.bloques.length >= 2 ? fuente.bloques : null)
 
@@ -420,7 +440,7 @@ export async function montarUltra(
     const hayServidor = fro.bloques !== null && fro.bloques.length >= 2
     if (hayServidor) {
       // Persigue la frontera: avanza a ritmo fijo y espera en el borde.
-      const t = avanzar(fro, dtMs / 1000, velocidad, RITMO_SIM, pausado)
+      const t = avanzar(fro, dtMs / 1000, velocidad, ritmo, pausado)
       // `max(0, …)` porque la rotación propia no puede retroceder aunque una
       // poda reancle el reloj por detrás de lo ya mostrado.
       spinSim += Math.max(0, t - spinSim)
@@ -514,8 +534,16 @@ export async function montarUltra(
     uni[19] = (performance.now() - t0) / 1000 // tiempo (nubes, pulso sol)
     uni.set(ojo, 20) // camPos
     uni[23] = seleccionado ? 1.2 : 1.0 // brillo
-    uni[24] = spinSim // rotación propia en segundos sim (respeta pausa)
+    uni[24] = spinSim // segundos sim mostrados (respeta pausa)
     device.queue.writeBuffer(bufUni, 0, uni)
+
+    // Rotación propia: reloj de PARED propio (ver `anguloRotacion`), avanzado
+    // solo si no está pausado. Se sube cada fotograma.
+    if (!pausado) relojRotacion += (dtMs / 1000) * VELOCIDAD_ROTACION
+    visuales.forEach((c, i) => {
+      giros[i] = anguloRotacion(c, relojRotacion)
+    })
+    device.queue.writeBuffer(bufGiros, 0, giros)
 
     const cod: any = device.createCommandEncoder()
     const paso: any = cod.beginRenderPass({
@@ -559,6 +587,8 @@ export async function montarUltra(
   return {
     alternarPausa: () => { pausado = !pausado },
     fijarVelocidad: (v: number) => { velocidad = v },
+    fijarRitmo: (r: number) => { if (r > 0 && Number.isFinite(r)) ritmo = r },
+    leerRitmo: () => ritmo,
     seleccionar: (id: string | null) => { seleccionado = id },
     fijarFuente: (f: FuenteEstados | null, limpiar = true) => {
       // Fundido SOLO al bifurcar o montar (limpiar=true: cambió el escenario).

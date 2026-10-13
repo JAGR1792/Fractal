@@ -1,7 +1,7 @@
 {
   "id": "sistema_solar",
   "nombre": "Sistema Solar",
-  "descripcion": "Sol y los 8 planetas con elementos orbitales reales de la epoca J2000 (semieje, excentricidad y longitud media reales; inclinaciones despreciadas). Cada planeta se situa en su posicion real del 1 de enero de 2000 y su velocidad se construye desde la energia y el momento angular, de modo que el semieje y la excentricidad son exactos. Las orbitas son elipticas de verdad: Mercurio e=0.206, Marte e=0.093, la Tierra e=0.017.",
+  "descripcion": "Sol y los 8 planetas con elementos orbitales reales de la epoca J2000 (semieje, excentricidad y longitud media reales; inclinaciones despreciadas). Cada planeta se situa en su posicion real del 1 de enero de 2000 y su velocidad se construye desde la energia y el momento angular, de modo que el semieje y la excentricidad son exactos. Las orbitas son elipticas de verdad: Mercurio e=0.206, Marte e=0.093, la Tierra e=0.017. La rotacion propia usa el dia sideral real de cada cuerpo; Venus y Urano son retrogrados (rotacion negativa).",
   "unidades": {
     "masa": "kg",
     "distancia": "m",
@@ -11,78 +11,159 @@
     {
       "id": "sol",
       "nombre": "Sol",
-      "masa": 1.989e30,
-      "radio": 6.957e8,
-      "posicion": [0.0, 0.0, 0.0],
-      "velocidad": [0.0, 0.0, 0.0]
+      "masa": 1.989e+30,
+      "radio": 695700000,
+      "posicion": [
+        0,
+        0,
+        0
+      ],
+      "velocidad": [
+        0,
+        0,
+        0
+      ],
+      "rotacion": 2192832
     },
     {
       "id": "mercurio",
       "nombre": "Mercurio",
-      "masa": 3.285e23,
-      "radio": 2.4397e6,
-      "posicion": [-1.929273e10, -6.706372e10, 0.0],
-      "velocidad": [37197.2477, -11341.2165, 0.0]
+      "masa": 3.285e+23,
+      "radio": 2439700,
+      "posicion": [
+        -19292730000,
+        -67063720000,
+        0
+      ],
+      "velocidad": [
+        37197.2477,
+        -11341.2165,
+        0
+      ],
+      "rotacion": 5067014.4
     },
     {
       "id": "venus",
       "nombre": "Venus",
-      "masa": 4.867e24,
-      "radio": 6.0518e6,
-      "posicion": [-1.076355e11, -4.850956e9, 0.0],
-      "velocidad": [1399.4964, -35148.6932, 0.0]
+      "masa": 4.867e+24,
+      "radio": 6051800,
+      "posicion": [
+        -107635500000,
+        -4850956000,
+        0
+      ],
+      "velocidad": [
+        1399.4964,
+        -35148.6932,
+        0
+      ],
+      "rotacion": -20997360
     },
     {
       "id": "tierra",
       "nombre": "Tierra",
-      "masa": 5.972e24,
-      "radio": 6.371e6,
-      "posicion": [-2.650444e10, 1.446932e11, 0.0],
-      "velocidad": [-29790.9197, -5479.5913, 0.0]
+      "masa": 5.972e+24,
+      "radio": 6371000,
+      "posicion": [
+        -26504440000,
+        144693200000,
+        0
+      ],
+      "velocidad": [
+        -29790.9197,
+        -5479.5913,
+        0
+      ],
+      "rotacion": 86164.1
     },
     {
       "id": "marte",
       "nombre": "Marte",
-      "masa": 6.39e23,
-      "radio": 3.3895e6,
-      "posicion": [2.081043e11, -2.057258e9, 0.0],
-      "velocidad": [1158.3191, 26306.4274, 0.0]
+      "masa": 6.39e+23,
+      "radio": 3389500,
+      "posicion": [
+        208104300000,
+        -2057258000,
+        0
+      ],
+      "velocidad": [
+        1158.3191,
+        26306.4274,
+        0
+      ],
+      "rotacion": 88642.7
     },
     {
       "id": "jupiter",
       "nombre": "Jupiter",
-      "masa": 1.898e27,
-      "radio": 6.9911e7,
-      "posicion": [5.983106e11, 4.407036e11, 0.0],
-      "velocidad": [-7918.9560, 11144.6668, 0.0]
+      "masa": 1.898e+27,
+      "radio": 69911000,
+      "posicion": [
+        598310600000,
+        440703600000,
+        0
+      ],
+      "velocidad": [
+        -7918.956,
+        11144.6668,
+        0
+      ],
+      "rotacion": 35730
     },
     {
       "id": "saturno",
       "nombre": "Saturno",
-      "masa": 5.683e26,
-      "radio": 5.8232e7,
-      "posicion": [9.607356e11, 9.796988e11, 0.0],
-      "velocidad": [-7418.1236, 6741.1437, 0.0]
+      "masa": 5.683e+26,
+      "radio": 58232000,
+      "posicion": [
+        960735600000,
+        979698800000,
+        0
+      ],
+      "velocidad": [
+        -7418.1236,
+        6741.1437,
+        0
+      ],
+      "rotacion": 38052
     },
     {
       "id": "urano",
       "nombre": "Urano",
-      "masa": 8.681e25,
-      "radio": 2.5362e7,
-      "posicion": [2.158250e12, -2.055189e12, 0.0],
-      "velocidad": [4644.2979, 4612.5838, 0.0]
+      "masa": 8.681e+25,
+      "radio": 25362000,
+      "posicion": [
+        2158250000000,
+        -2055189000000,
+        0
+      ],
+      "velocidad": [
+        4644.2979,
+        4612.5838,
+        0
+      ],
+      "rotacion": -62064
     },
     {
       "id": "neptuno",
       "nombre": "Neptuno",
-      "masa": 1.024e26,
-      "radio": 2.4622e7,
-      "posicion": [2.513737e12, -3.739052e12, 0.0],
-      "velocidad": [4475.5883, 3064.0981, 0.0]
+      "masa": 1.024e+26,
+      "radio": 24622000,
+      "posicion": [
+        2513737000000,
+        -3739052000000,
+        0
+      ],
+      "velocidad": [
+        4475.5883,
+        3064.0981,
+        0
+      ],
+      "rotacion": 57996
     }
   ],
   "parametros": {
-    "dt": 3600.0,
+    "dt": 3600,
     "pasos": 87600,
     "nota": "1 paso por hora, 10 anos simulados. Elementos reales J2000; el periodo simulado coincide con el real dentro del 0.5% (antes Mercurio y Saturno fallaban un 3% por semiejes equivocados)."
   }

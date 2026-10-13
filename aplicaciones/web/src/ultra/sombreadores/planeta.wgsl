@@ -33,6 +33,9 @@ struct Uniformes {
 @group(0) @binding(12) var tex9: texture_2d<f32>;
 @group(0) @binding(13) var muestreador: sampler;
 @group(0) @binding(14) var<storage, read> texSlots: array<u32>;
+// Ángulo de rotación propia por cuerpo, ya acotado a [0, 2π) en la CPU.
+// Va al final para no renumerar los bindings de las texturas.
+@group(0) @binding(15) var<storage, read> giros: array<f32>;
 
 struct Salida {
   @builtin(position) pos: vec4<f32>,
@@ -53,9 +56,11 @@ fn vs(
 ) -> Salida {
   let c = centros[inst];
   let d = datos[inst];
-  // Rotación propia atada al TIEMPO SIMULADO (u.spin en segundos):
-  // la luna está acoplada por marea: gira una vez por órbita.
-  let giro = u.spin * 6.2831853 / periodoRotacion(c.w);
+  // Rotación propia: el ángulo ya viene calculado en la CPU (f64) y acotado a
+  // [0, 2π) por cuerpo, así que aquí no se multiplica tiempo por frecuencia.
+  // Cada cuerpo tiene su período real (Venus 243 días retrógrados, Júpiter
+  // 9,9 h) en vez de las 24 h que se aplicaban a todos.
+  let giro = giros[inst];
   let mundo = vec3<f32>(rotY(vertice, giro) * d.x + c.xyz);
   var s: Salida;
   s.pos = u.viewProj * vec4<f32>(mundo, 1.0);
@@ -75,49 +80,49 @@ fn rotY(p: vec3<f32>, a: f32) -> vec3<f32> {
   return vec3<f32>(c * p.x + s * p.z, p.y, -s * p.x + c * p.z);
 }
 
-/// Período de rotación propia en segundos sim (la luna: 27.32 días, acoplada).
-fn periodoRotacion(tipo: f32) -> f32 {
-  if (tipo < 0.5) {
-    return 2160000.0;
-  }
-  if (tipo < 1.5) {
-    return 86164.0;
-  }
-  if (tipo < 2.5) {
-    return 2360448.0;
-  }
-  return 86400.0;
-}
-
-// Elige la muestra según el slot (flujo uniforme: se muestrean las 10).
-fn muestraSlot(slot: u32, uv: vec2<f32>) -> vec3<f32> {
-  var m = textureSample(tex0, muestreador, uv).rgb;
+// Elige la muestra según el slot. OJO: no muestrea aquí dentro — WGSL
+// exige textureSample en flujo uniforme, así que el llamador muestrea las
+// 10 arriba y esta función solo selecciona.
+fn eligeMuestra(
+  slot: u32,
+  m0: vec3<f32>,
+  m1: vec3<f32>,
+  m2: vec3<f32>,
+  m3: vec3<f32>,
+  m4: vec3<f32>,
+  m5: vec3<f32>,
+  m6: vec3<f32>,
+  m7: vec3<f32>,
+  m8: vec3<f32>,
+  m9: vec3<f32>,
+) -> vec3<f32> {
+  var m = m0;
   if (slot == 1u) {
-    m = textureSample(tex1, muestreador, uv).rgb;
+    m = m1;
   }
   if (slot == 2u) {
-    m = textureSample(tex2, muestreador, uv).rgb;
+    m = m2;
   }
   if (slot == 3u) {
-    m = textureSample(tex3, muestreador, uv).rgb;
+    m = m3;
   }
   if (slot == 4u) {
-    m = textureSample(tex4, muestreador, uv).rgb;
+    m = m4;
   }
   if (slot == 5u) {
-    m = textureSample(tex5, muestreador, uv).rgb;
+    m = m5;
   }
   if (slot == 6u) {
-    m = textureSample(tex6, muestreador, uv).rgb;
+    m = m6;
   }
   if (slot == 7u) {
-    m = textureSample(tex7, muestreador, uv).rgb;
+    m = m7;
   }
   if (slot == 8u) {
-    m = textureSample(tex8, muestreador, uv).rgb;
+    m = m8;
   }
   if (slot == 9u) {
-    m = textureSample(tex9, muestreador, uv).rgb;
+    m = m9;
   }
   return m;
 }
@@ -130,9 +135,21 @@ fn fs(e: Salida) -> @location(0) vec4<f32> {
   let dia = smoothstep(-0.08, 0.25, dot(n, l));
   let ambiente = 0.35;
 
+  // Muestreo incondicional en flujo uniforme (WGSL lo exige: e.slot varía
+  // por instancia y no vale dentro de ramas).
+  let m0 = textureSample(tex0, muestreador, e.uv).rgb;
+  let m1 = textureSample(tex1, muestreador, e.uv).rgb;
+  let m2 = textureSample(tex2, muestreador, e.uv).rgb;
+  let m3 = textureSample(tex3, muestreador, e.uv).rgb;
+  let m4 = textureSample(tex4, muestreador, e.uv).rgb;
+  let m5 = textureSample(tex5, muestreador, e.uv).rgb;
+  let m6 = textureSample(tex6, muestreador, e.uv).rgb;
+  let m7 = textureSample(tex7, muestreador, e.uv).rgb;
+  let m8 = textureSample(tex8, muestreador, e.uv).rgb;
+  let m9 = textureSample(tex9, muestreador, e.uv).rgb;
   var base = e.color;
   if (e.slot < 10u) {
-    base = muestraSlot(e.slot, e.uv);
+    base = eligeMuestra(e.slot, m0, m1, m2, m3, m4, m5, m6, m7, m8, m9);
   }
   var col = base * (ambiente + dia * 0.85) * u.brillo;
   // Fresnel atmosférico en el borde, con vista real (gris en la luna).

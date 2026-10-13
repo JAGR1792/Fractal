@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
+  anguloRotacion,
   aVisual,
   normalizarPosiciones,
   NUM_TEXTURAS,
+  periodoRotacionDe,
+  ROTACION_POR_ID,
   slotTextura,
   TEXTURAS_POR_ID,
   tipoPlaneta,
   urlTextura,
+  VELOCIDAD_ROTACION,
 } from './escenario'
 
 describe('escala visual', () => {
@@ -78,5 +82,81 @@ describe('escala visual', () => {
       expect(slotTextura(id), `${id} sin textura`).toBeGreaterThanOrEqual(0)
     }
     expect(slotTextura('luna')).toBeGreaterThanOrEqual(0)
+  })
+})
+
+describe('rotación propia', () => {
+  it('cada cuerpo tiene su período real, no 24 h para todos', () => {
+    // El defecto: el shader daba 86400 s a todo lo que no fuera Sol/Tierra/Luna.
+    expect(periodoRotacionDe({ id: 'jupiter' })).toBe(ROTACION_POR_ID.jupiter)
+    expect(periodoRotacionDe({ id: 'mercurio' })).toBe(ROTACION_POR_ID.mercurio)
+    // Júpiter gira en 9,9 h y la Tierra en 23,9 h: no pueden ser iguales.
+    expect(periodoRotacionDe({ id: 'jupiter' })).toBeLessThan(periodoRotacionDe({ id: 'tierra' }))
+    expect(periodoRotacionDe({ id: 'mercurio' })).toBeGreaterThan(periodoRotacionDe({ id: 'tierra' }) * 50)
+  })
+
+  it('Venus y Urano son retrógrados', () => {
+    expect(periodoRotacionDe({ id: 'venus' })).toBeLessThan(0)
+    expect(periodoRotacionDe({ id: 'urano' })).toBeLessThan(0)
+    expect(periodoRotacionDe({ id: 'tierra' })).toBeGreaterThan(0)
+  })
+
+  it('el valor del escenario manda sobre el catálogo', () => {
+    expect(periodoRotacionDe({ id: 'tierra', rotacion: 1000 })).toBe(1000)
+    // Un cero o un valor inválido cae al catálogo, no a un período infinito.
+    expect(periodoRotacionDe({ id: 'tierra', rotacion: 0 })).toBe(ROTACION_POR_ID.tierra)
+    expect(periodoRotacionDe({ id: 'desconocido' })).toBe(86400)
+  })
+
+  it('el ángulo está acotado a [0, 2π) y avanza con el reloj', () => {
+    const cuerpo = { id: 'tierra' }
+    for (const reloj of [0, 1e3, 1e6, 1e9, 1e12]) {
+      const a = anguloRotacion(cuerpo, reloj)
+      expect(a).toBeGreaterThanOrEqual(0)
+      expect(a).toBeLessThan(2 * Math.PI)
+    }
+    // Un día de rotación completa una vuelta: el ángulo vuelve a 0 (envuelve).
+    const unDia = ROTACION_POR_ID.tierra / VELOCIDAD_ROTACION
+    expect(anguloRotacion(cuerpo, unDia)).toBeCloseTo(0, 6)
+    // Y a tres cuartos de vuelta le queda un cuarto para cerrar.
+    expect(anguloRotacion(cuerpo, (unDia * 3) / 4)).toBeCloseTo((3 * Math.PI) / 2, 6)
+    expect(anguloRotacion(cuerpo, unDia / 4)).toBeCloseTo(Math.PI / 2, 6)
+
+    // Retrógrado: con período negativo la fase avanza al revés. Se comprueba
+    // sobre la fase con signo (normalizada, Venus cae cerca de 2π y no se puede
+    // comparar magnitudes).
+    const faseTierra = anguloRotacion({ id: 'tierra' }, 1e5)
+    const avance = (id: string, reloj: number): number => {
+      const a0 = anguloRotacion({ id }, reloj)
+      const a1 = anguloRotacion({ id }, reloj + 1)
+      let d = a1 - a0
+      if (d > Math.PI) d -= 2 * Math.PI
+      if (d < -Math.PI) d += 2 * Math.PI
+      return d
+    }
+    expect(avance('tierra', 1e5)).toBeGreaterThan(0)
+    expect(avance('venus', 1e5)).toBeLessThan(0)
+    expect(faseTierra).toBeGreaterThan(0)
+  })
+
+  it('la rotación es visible sin estroboscopio a 60 fps', () => {
+    // Este es el motivo de usar reloj de pared: con tiempo sim la Tierra daba
+    // 87,5° por fotograma y Júpiter 211° (giros invertidos o congelados).
+    // El reloj de rotación avanza 1 s de pared por segundo real: un fotograma
+    // son 1/60 s de ese reloj.
+    const porFotograma = (reloj: number, id: string): number => {
+      const a0 = anguloRotacion({ id }, reloj)
+      const a1 = anguloRotacion({ id }, reloj + 1 / 60)
+      // Diferencia angular mínima (evita el salto de 2π al dar la vuelta).
+      const d = Math.abs(a1 - a0)
+      return (Math.min(d, 2 * Math.PI - d) * 180) / Math.PI
+    }
+    for (const id of ['tierra', 'marte', 'jupiter', 'saturno']) {
+      const g = porFotograma(1e7, id)
+      expect(g, `${id} gira demasiado rápido`).toBeLessThan(45)
+      expect(g, `${id} gira demasiado lento`).toBeGreaterThan(0.05)
+    }
+    // Júpiter (9,9 h) gira más rápido que la Tierra (23,9 h), como en la realidad.
+    expect(porFotograma(1e7, 'jupiter')).toBeGreaterThan(porFotograma(1e7, 'tierra'))
   })
 })

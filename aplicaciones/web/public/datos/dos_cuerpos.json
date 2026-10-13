@@ -11,22 +11,40 @@
     {
       "id": "tierra",
       "nombre": "Tierra",
-      "masa": 5.972e24,
-      "radio": 6.371e6,
-      "posicion": [-4668000.0, 0.0, 0.0],
-      "velocidad": [0.0, -12.443, 0.0]
+      "masa": 5.972e+24,
+      "radio": 6371000,
+      "posicion": [
+        -4668000,
+        0,
+        0
+      ],
+      "velocidad": [
+        0,
+        -12.443,
+        0
+      ],
+      "rotacion": 86164.1
     },
     {
       "id": "luna",
       "nombre": "Luna",
-      "masa": 7.342e22,
-      "radio": 1.737e6,
-      "posicion": [379700000.0, 0.0, 0.0],
-      "velocidad": [0.0, 1012.087, 0.0]
+      "masa": 7.342e+22,
+      "radio": 1737000,
+      "posicion": [
+        379700000,
+        0,
+        0
+      ],
+      "velocidad": [
+        0,
+        1012.087,
+        0
+      ],
+      "rotacion": 2360591
     }
   ],
   "parametros": {
-    "dt": 600.0,
+    "dt": 600,
     "pasos": 8000,
     "nota": "10 pasos por hora, 55.5 dias simulados (~2 orbitas de 27.29 dias). El primer tramo ya cierra 2 vueltas para que el detector de bucle siempre encuentre empalme real."
   }

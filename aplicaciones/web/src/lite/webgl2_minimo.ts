@@ -3,13 +3,13 @@
  * Sin motores. Un draw por cuerpo (N pequeño en LITE).
  */
 
-import { aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, tipoPlaneta, urlTextura } from '../escenario'
+import { anguloRotacion, aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, slotTextura, tipoPlaneta, NUM_TEXTURAS, TEXTURAS_POR_ID, VELOCIDAD_ROTACION } from '../escenario'
 import { camaraInicial, conectarControles, matrizProyeccion, matrizVista, multiplicar, type EstadoCamara } from '../camara'
 import { aSegmentos, crearEstela, empujarEstela, generarEstrellas, PASO_ESTELA_SIM, RegistroEstela, type Estela } from '../estelas'
 import { crearSistema, actualizar as actualizarChispas, aIntercalado as chispasIntercaladas, explotar as explotarChispas, puedeExplotar as puedeExplotarChispas } from '../particulas'
 import { detectarImpactos } from '../mecanica'
 import { interpolarBloque } from '../binario'
-import { avanzar, bloqueActual, crearFrontera, instanteDe, reanclar } from '../frontera'
+import { avanzar, bloqueActual, crearFrontera, instanteDe, reanclar, ritmoParaPeriodo } from '../frontera'
 import type { FuenteEstados } from '../api'
 
 const VS = `#version 300 es
@@ -21,13 +21,14 @@ uniform mat4 uVP;
 uniform vec3 uCentro;
 uniform float uRadio;
 uniform float uTipo;
-uniform float uSpin;
+uniform float uGiro;
 out vec3 vN; out vec3 vC; out vec2 vUV;
-uniform vec3 uColor;
 vec3 rotY(vec3 q, float a){ float c = cos(a); float s = sin(a); return vec3(c*q.x + s*q.z, q.y, -s*q.x + c*q.z); }
-float periodo(float t){ if (t < 0.5) return 2160000.0; if (t < 1.5) return 86164.0; if (t < 2.5) return 2360448.0; return 86400.0; }
 void main(){
-  float g = uSpin * 6.2831853 / periodo(uTipo);
+  // El ángulo llega ya acotado a [0, 2π) desde la CPU, con el período real de
+  // cada cuerpo (antes se multiplicaba el tiempo sim absoluto aquí y todas las
+  // rotaciones usaban 24 h).
+  float g = uGiro;
   vec3 pr = rotY(p, g);
   vec3 mundo = pr*uRadio+uCentro; vN=rotY(n, g); vC=uColor; vUV=uv; gl_Position=uVP*vec4(mundo,1.0);
 }`
@@ -36,15 +37,34 @@ const FS = `#version 300 es
 precision mediump float;
 in vec3 vN; in vec3 vC; in vec2 vUV; out vec4 o;
 uniform float uTipo;
-uniform sampler2D uTexTierra;
-uniform sampler2D uTexLuna;
+uniform int uSlot;
+uniform sampler2D uTex0;
+uniform sampler2D uTex1;
+uniform sampler2D uTex2;
+uniform sampler2D uTex3;
+uniform sampler2D uTex4;
+uniform sampler2D uTex5;
+uniform sampler2D uTex6;
+uniform sampler2D uTex7;
+uniform sampler2D uTex8;
+uniform sampler2D uTex9;
+vec3 muestra(int s, vec2 uv){
+  if (s == 1) return texture(uTex1, uv).rgb;
+  if (s == 2) return texture(uTex2, uv).rgb;
+  if (s == 3) return texture(uTex3, uv).rgb;
+  if (s == 4) return texture(uTex4, uv).rgb;
+  if (s == 5) return texture(uTex5, uv).rgb;
+  if (s == 6) return texture(uTex6, uv).rgb;
+  if (s == 7) return texture(uTex7, uv).rgb;
+  if (s == 8) return texture(uTex8, uv).rgb;
+  if (s == 9) return texture(uTex9, uv).rgb;
+  return texture(uTex0, uv).rgb;
+}
 void main(){
   vec3 n = normalize(vN);
   vec3 base = vC;
-  if (uTipo > 0.5 && uTipo < 1.5) {
-    base = texture(uTexTierra, vUV).rgb;
-  } else if (uTipo > 1.5 && uTipo < 2.5) {
-    base = texture(uTexLuna, vUV).rgb;
+  if (uSlot >= 0) {
+    base = muestra(uSlot, vUV);
   }
   if (uTipo < 0.5) {
     o = vec4(base*1.4 + vec3(0.35,0.12,0.02), 1.0); // sol emissive
@@ -148,6 +168,10 @@ function cargarTexturaGL(gl: WebGL2RenderingContext, url: string, reserva: [numb
 export interface ControlLite {
   alternarPausa: () => void
   fijarVelocidad: (v: number) => void
+  /** Segundos sim por segundo de pared a 1x, según el escenario. */
+  fijarRitmo: (ritmo: number) => void
+  /** Ritmo de reproducción vigente. */
+  leerRitmo: () => number
   /** Cambia la fuente (`limpiar=false` conserva estelas en encadenados). */
   fijarFuente: (f: FuenteEstados | null, limpiar?: boolean) => void
   /** Añade bloques del stream (sin resetear el reloj). */
@@ -165,6 +189,7 @@ export function montarLite(
   lienzo: HTMLCanvasElement,
   urlEscenario = '/datos/dos_cuerpos.json',
   fuente: FuenteEstados | null = null,
+  periodoSim: number | null = null,
 ): ControlLite {
   const glRaw = lienzo.getContext('webgl2')
   if (!glRaw) throw new Error('sin WebGL2')
@@ -180,9 +205,10 @@ export function montarLite(
   const locRadio = gl.getUniformLocation(prog, 'uRadio')
   const locColor = gl.getUniformLocation(prog, 'uColor')
   const locTipo = gl.getUniformLocation(prog, 'uTipo')
-  const locSpin = gl.getUniformLocation(prog, 'uSpin')
-  const locTexTierra = gl.getUniformLocation(prog, 'uTexTierra')
-  const locTexLuna = gl.getUniformLocation(prog, 'uTexLuna')
+  const locGiro = gl.getUniformLocation(prog, 'uGiro')
+  const locSlot = gl.getUniformLocation(prog, 'uSlot')
+  const locTex: Array<WebGLUniformLocation | null> = []
+  for (let k = 0; k < NUM_TEXTURAS; k++) locTex.push(gl.getUniformLocation(prog, `uTex${k}`))
   const locVPOrb = gl.getUniformLocation(progOrb, 'uVP')
   const locColorOrb = gl.getUniformLocation(progOrb, 'uColor')
   const locAlphaOrb = gl.getUniformLocation(progOrb, 'uAlpha')
@@ -215,9 +241,16 @@ export function montarLite(
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufIdx)
   gl.bindVertexArray(null)
 
-  // Texturas del catálogo (ver public/texturas/LEEME.md)
-  const texTierra = cargarTexturaGL(gl, urlTextura('tierra') ?? '', [31, 77, 191])
-  const texLuna = cargarTexturaGL(gl, urlTextura('luna') ?? '', [158, 158, 168])
+  // Texturas del catálogo por slot (ver TEXTURAS_POR_ID y LEEME.md).
+  // Van a las unidades 0..N-1 una sola vez; por cuerpo solo cambia uSlot.
+  const entradasTex = Object.values(TEXTURAS_POR_ID).sort((a, b) => a.slot - b.slot)
+  const texPorSlot: WebGLTexture[] = entradasTex.map(
+    (e) => cargarTexturaGL(gl, e.url, [128, 128, 140]),
+  )
+  for (let k = 0; k < texPorSlot.length; k++) {
+    gl.activeTexture(gl.TEXTURE0 + k)
+    gl.bindTexture(gl.TEXTURE_2D, texPorSlot[k])
+  }
 
   const vaoOrb = gl.createVertexArray()!
 
@@ -271,11 +304,14 @@ export function montarLite(
   let angulo = 0
   let vivo = true
   let spinLite = 0
+  /** Reloj propio de la rotación, en tiempo de pared escalado (no simulado). */
+  let relojRotacion = 0
   let ultimoMs = performance.now()
 
   // Fuente del servidor (igual que ULTRA): interpola fotogramas binarios.
-  // Sin módulo ni bucle: persigue la frontera y espera en el borde.
-  const RITMO_SIM = 120000
+  // Sin módulo ni bucle: persigue la frontera y espera en el borde. El ritmo se
+  // ajusta al sistema (ver `ritmoParaPeriodo`).
+  let ritmo = ritmoParaPeriodo(periodoSim ?? NaN)
   let escalaFuente = fuente?.escala ?? 1
   const fro = crearFrontera(fuente && fuente.bloques.length >= 2 ? fuente.bloques : null)
   // Fundido de empalme (~1 s) sobre las posiciones del frame previo.
@@ -326,7 +362,7 @@ export function montarLite(
     const hayServidor = fro.bloques !== null && fro.bloques.length >= 2
     let t = 0
     if (hayServidor) {
-      t = avanzar(fro, dtS, velocidad, RITMO_SIM, pausado)
+      t = avanzar(fro, dtS, velocidad, ritmo, pausado)
       spinLite = t
     } else if (!pausado) {
       spinLite += dtS * velocidad * 1440 // segundos sim (ver periodo en GLSL)
@@ -395,23 +431,22 @@ export function montarLite(
       gl.drawArrays(gl.POINTS, 0, chispasArr.length / 7)
     }
 
-    // Planetas: un draw por cuerpo
+    // Planetas: un draw por cuerpo (samplers fijos, solo cambia uSlot).
     gl.useProgram(prog)
     gl.uniformMatrix4fv(locVP, false, vp)
-    gl.activeTexture(gl.TEXTURE0)
-    gl.bindTexture(gl.TEXTURE_2D, texTierra)
-    gl.uniform1i(locTexTierra, 0)
-    gl.activeTexture(gl.TEXTURE1)
-    gl.bindTexture(gl.TEXTURE_2D, texLuna)
-    gl.uniform1i(locTexLuna, 1)
-    gl.uniform1f(locSpin, spinLite)
+    for (let k = 0; k < locTex.length; k++) gl.uniform1i(locTex[k], k)
     gl.bindVertexArray(vaoEsfera)
+    // Rotación propia: reloj de PARED propio, avanzado solo si no está pausado.
+    if (!pausado) relojRotacion += dtS * VELOCIDAD_ROTACION
     visuales.forEach((c, i) => {
       const [x, y, z] = pos[i] ?? [10, 0, 0]
       gl.uniform3f(locCentro, x, y, z)
       gl.uniform1f(locRadio, c.radioVisual)
+      // Ángulo por cuerpo con su período real (ver `anguloRotacion`).
+      gl.uniform1f(locGiro, anguloRotacion(c, relojRotacion))
       gl.uniform3f(locColor, c.color[0], c.color[1], c.color[2])
       gl.uniform1f(locTipo, tipoPlaneta(c.id))
+      gl.uniform1i(locSlot, slotTextura(c.id))
       gl.drawElements(gl.TRIANGLES, esf.idx.length, gl.UNSIGNED_SHORT, 0)
     })
     gl.bindVertexArray(null)
@@ -470,6 +505,8 @@ export function montarLite(
   return {
     alternarPausa: () => { pausado = !pausado },
     fijarVelocidad: (v: number) => { velocidad = v },
+    fijarRitmo: (r: number) => { if (r > 0 && Number.isFinite(r)) ritmo = r },
+    leerRitmo: () => ritmo,
     fijarFuente: (f: FuenteEstados | null, limpiar = true) => {
       // Fundido SOLO al bifurcar (limpiar=true: cambió el escenario).
       if (limpiar) {
