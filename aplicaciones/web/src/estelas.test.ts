@@ -169,11 +169,32 @@ describe('registro de estela en tiempo sim', () => {
     const pos = orbita(2.36e6)
     reg.registrar(e, 0, 0, pos)
     const antes = e.puntos.length
-    // Salto de 100000 pasos: no puede intentar rellenarlos todos de golpe.
+    // Salto de 100000 pasos: muy por encima del tope de seguridad (2400 con
+    // capacidad 600). No puede intentar rellenarlos todos de golpe.
     reg.registrar(e, PASO_ESTELA_SIM * 100_000, 0, pos)
     expect(e.puntos.length - antes).toBeLessThanOrEqual(1)
     // Y la estela sigue viva después (el próximo paso sí se graba).
     reg.registrar(e, PASO_ESTELA_SIM * 100_001, 0, pos)
     expect(e.puntos.length).toBeGreaterThan(antes)
+  })
+
+  it('no parte la estela al recuperarse de un bloqueo del cómputo', () => {
+    // Medido contra la API viva: al reanudar tras un bloqueo el reloj da saltos
+    // de hasta ~200 pasos. El registro DEBE rellenarlos, porque si reancla deja
+    // un hueco y `aSegmentos` corta la estela justo en el momento más visible.
+    const e = crearEstela(600)
+    const reg = new RegistroEstela(PASO_ESTELA_SIM, 600)
+    const pos = orbita(2.36e6)
+    reg.registrar(e, 0, 0, pos)
+    // Salto de 200 pasos, el peor caso medido a velocidad 200x.
+    reg.registrar(e, PASO_ESTELA_SIM * 200, 0, pos)
+    // Ni un hueco: todos los puntos consecutivos a un paso exacto.
+    expect(e.puntos.length).toBe(200)
+    for (let k = 1; k < e.puntos.length; k++) {
+      expect(e.puntos[k][3] - e.puntos[k - 1][3]).toBeCloseTo(PASO_ESTELA_SIM, 6)
+    }
+    // Y `aSegmentos` no corta nada: la estela sigue entera.
+    const segs = aSegmentos(e, [1, 1, 1], PASO_ESTELA_SIM)
+    expect(segs).toHaveLength((e.puntos.length - 1) * 14)
   })
 })

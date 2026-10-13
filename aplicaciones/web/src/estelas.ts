@@ -79,10 +79,16 @@ export class RegistroEstela {
   private readonly paso: number
   private readonly maximo: number
   /**
-   * Tope de puntos que se rellenan de una vez. Si el reloj saltara más que
-   * esto (un hueco enorme), se reancla en vez de rellenar: rellenar miles de
-   * puntos de un fotograma no aporta nada y bloquearía el frame. El hueco se
-   * detecta igual, porque al reanclar queda una separación mayor que el paso.
+   * Tope de puntos que se rellenan de una sola vez. Es una red de seguridad
+   * para un salto absurdo, NO un límite de trabajo normal.
+   *
+   * Medido contra la API viva: al recuperarse de un bloqueo del cómputo el
+   * reloj da saltos de hasta ~168 pasos (200x) y de ~200 pasos (1000x). Con un
+   * tope ajustado el registro se rendía y reanclaba, y ese hueco partía la
+   * estela justo en el momento más visible. Rellenar es lineal y barato (600
+   * interpolaciones son microsegundos), así que el tope se pone holgado: cuatro
+   * vueltas completas al anillo. Más allá de eso sí conviene reanclar, porque
+   * rellenar sin límite ante un tiempo corrupto sí podría colgar el fotograma.
    */
   private readonly rellenoMaximo: number
 
@@ -90,7 +96,7 @@ export class RegistroEstela {
     if (!(paso > 0)) throw new Error('el paso de la estela debe ser positivo')
     this.paso = paso
     this.maximo = maximo
-    this.rellenoMaximo = Math.max(1, Math.ceil(maximo / 4))
+    this.rellenoMaximo = Math.max(4, maximo * 4)
   }
 
   /**
