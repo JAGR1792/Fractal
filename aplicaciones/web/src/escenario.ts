@@ -174,29 +174,155 @@ export function slotTextura(id: string): number {
 }
 
 /**
- * Convierte radios físicos (m) a radios visuales (mundo).
- * Raíz cúbica: preserva proporciones mejor que el logaritmo (Júpiter se ve
- * grande sin tragarse a los interiores) y a escala real no se vería nada.
+ * Fracción del radio de la órbita más interna que puede ocupar el cuerpo más
+ * grande. Es la restricción que hace visible el sistema: si el cuerpo mayor
+ * pasa de aquí, se traga las órbitas interiores.
  */
-export function aVisual(escenario: Escenario, exageracion = 800): CuerpoVisual[] {
-  void exageracion
-  return escenario.cuerpos.map((c, i) => {
-    // cbrt(1e6..1e9 m) en 0.4..3.2 mundo: Júpiter se distingue sin tapar
-    // a los interiores (las posiciones ya comprimen mucho el sistema).
-    const radioVisual = 0.4 + Math.cbrt(Math.max(c.radio, 1)) / 300
-    const color = COLORES_POR_ID[c.id.toLowerCase()] ?? COLORES_FALLBACK[i % COLORES_FALLBACK.length]
-    return {
-      ...c,
-      radioVisual: Math.min(Math.max(radioVisual, 0.4), 3.2),
-      color,
+export const MAX_RADIO_VISUAL_RELATIVO = 0.35
+
+/**
+ * Altura de referencia del viewport, en unidades de mundo por unidad de
+ * pantalla, para razonar en píxeles (900 es un viewport típico).
+ */
+export const VIEWPORT_REFERENCIA = 900
+
+/**
+ * Fracción mínima del alto de pantalla que ocupa cualquier cuerpo.
+ *
+ * Es la condición que hace útil el render: con las ocho órbitas en cuadro, el
+ * rango físico Sol→Mercurio es 285:1 y una fracción fija del radio de
+ * referencia dejaba a los interiores en 0,3 píxeles (invisibles). Fijando el
+ * mínimo **en píxeles** (0,0018 del alto ≈ 1,6 px en 900), todos los cuerpos se
+ * ven como puntos.
+ *
+ * El valor es un compromiso medido: el Sol, con las ocho órbitas en cuadro,
+ * ocupa ~4 px, así que un suelo más alto (3 px) igualaba todos los planetas al
+ * Sol y borraba la jerarquía; uno más bajo (0,3 px) los hacía invisibles.
+ */
+export const MIN_FRACCION_PANTALLA = 0.0018
+
+/**
+ * Convierte radios físicos (m) a radios visuales (mundo).
+ *
+ * Los radios se escalan **relativos al sistema**, no en absoluto. Ese era el
+ * defecto: con una fórmula absoluta, en el Sistema Solar el Sol salía con radio
+ * 5,02 unidades mientras Mercurio orbita a 0,62, así que Mercurio, Venus, la
+ * Tierra y Marte quedaban **dentro del Sol** y solo se veían los planetas
+ * exteriores (justo los más lentos: Neptuno recorre 0,001° por fotograma). El
+ * sistema parecía congelado. En Tierra-Luna no se notaba porque los radios
+ * físicos son parecidos.
+ *
+ * Pasos, en este orden:
+ * 1. Extensión del sistema y distancia de cámara (encuadra todo).
+ * 2. Compresión logarítmica del radio físico, con tope: nadie tapa a su vecino.
+ * 3. Suelo en píxeles: nadie queda invisible.
+ */
+export function aVisual(escenario: Escenario): CuerpoVisual[] {
+  const cuerpos = escenario.cuerpos
+  const escala = escalaMundoDe(cuerpos)
+
+  // Separación más corta del sistema: fija el radio de referencia.
+  let separacionMinima = Infinity
+  for (let i = 0; i < cuerpos.length; i++) {
+    for (let j = i + 1; j < cuerpos.length; j++) {
+      const d = Math.hypot(
+        cuerpos[j].posicion[0] - cuerpos[i].posicion[0],
+        cuerpos[j].posicion[1] - cuerpos[i].posicion[1],
+        cuerpos[j].posicion[2] - cuerpos[i].posicion[2],
+      )
+      if (d > 0 && d < separacionMinima) separacionMinima = d
     }
+  }
+  const separacionMundo = Number.isFinite(separacionMinima) ? separacionMinima * escala : 40
+
+  // Extensión del sistema en unidades mundo y semialtura visible con la cámara
+  // que lo encuadra. De aquí sale el suelo en píxeles.
+  let extension = 0
+  for (const c of cuerpos) {
+    const r = Math.hypot(c.posicion[0], c.posicion[1], c.posicion[2]) * escala
+    if (r > extension) extension = r
+  }
+  const semialtura = extension > 0
+    ? extension * MARGEN_ENCUADRE
+    : 20 * Math.tan(((FOV_VERTICAL_GRADOS * Math.PI) / 180) / 2)
+
+  const radioVisualMax = separacionMundo * MAX_RADIO_VISUAL_RELATIVO
+  const radioFisicoMax = Math.max(...cuerpos.map((c) => Math.max(c.radio, 1)))
+  const radioVisualMin = semialtura * MIN_FRACCION_PANTALLA
+
+  return cuerpos.map((c, i) => {
+    const proporcion = Math.log10(1 + 9 * (Math.max(c.radio, 1) / radioFisicoMax))
+    let radioVisual = radioVisualMax * proporcion
+
+    // Tope: que quepa antes del cuerpo más próximo (nadie tapa a nadie).
+    let vecinoMasProximo = Infinity
+    for (let j = 0; j < cuerpos.length; j++) {
+      if (j === i) continue
+      const d = Math.hypot(
+        cuerpos[j].posicion[0] - c.posicion[0],
+        cuerpos[j].posicion[1] - c.posicion[1],
+        cuerpos[j].posicion[2] - c.posicion[2],
+      )
+      if (d > 0 && d < vecinoMasProximo) vecinoMasProximo = d
+    }
+    if (Number.isFinite(vecinoMasProximo)) {
+      radioVisual = Math.min(radioVisual, vecinoMasProximo * escala * MAX_RADIO_VISUAL_RELATIVO)
+    }
+    // Suelo en píxeles: que se vea. Se aplica después del tope porque un punto
+    // diminuto no tapa nada y un tope excesivo sí.
+    radioVisual = Math.max(radioVisual, radioVisualMin)
+
+    const color = COLORES_POR_ID[c.id.toLowerCase()] ?? COLORES_FALLBACK[i % COLORES_FALLBACK.length]
+    return { ...c, radioVisual, color }
   })
+}
+
+/** Radio máximo dibujado, para situar la cámara. */
+export function radioVisualMayor(visuales: CuerpoVisual[]): number {
+  let max = 0
+  for (const c of visuales) if (c.radioVisual > max) max = c.radioVisual
+  return max
+}
+
+/** Campo de visión vertical de la cámara, en grados (ver `matrizProyeccion`). */
+export const FOV_VERTICAL_GRADOS = 50
+
+/** Margen del encuadre: 15% de aire alrededor de la órbita más externa. */
+export const MARGEN_ENCUADRE = 1.15
+
+/**
+ * Distancia de cámara que **encuadra el sistema entero**: la órbita más externa
+ * más un margen debe caber en el campo de visión vertical.
+ *
+ * Ojo con las unidades: la extensión se mide en unidades MUNDO (las posiciones
+ * se normalizan con `escalaMundo`), no en metros. Usar los metros daba una
+ * cámara a 1e13, con todo el sistema en un píxel.
+ *
+ * Antes esto era un múltiplo del radio dibujado, que con los radios ya
+ * relativos daba 3,04 unidades para el Sistema Solar cuando Neptuno orbita a
+ * 40: se veían el Sol y Mercurio y nada más.
+ */
+export function distanciaCamara(visuales: CuerpoVisual[]): number {
+  const escala = escalaMundo(visuales)
+  let extension = 0
+  for (const c of visuales) {
+    const r = Math.hypot(c.posicion[0], c.posicion[1], c.posicion[2]) * escala + c.radioVisual
+    if (r > extension) extension = r
+  }
+  if (!(extension > 0)) return 20
+  // La semialtura visible a distancia d es d·tan(fov/2).
+  return (extension * MARGEN_ENCUADRE) / Math.tan(((FOV_VERTICAL_GRADOS * Math.PI) / 180) / 2)
 }
 
 /** Factor de escala mundo (40 / radio máximo) para normalizar posiciones SI. */
 export function escalaMundo(visuales: CuerpoVisual[]): number {
+  return escalaMundoDe(visuales)
+}
+
+/** Igual que `escalaMundo` pero sobre cuerpos con posición (sin radioVisual). */
+function escalaMundoDe(cuerpos: Array<{ posicion: [number, number, number] }>): number {
   let maxR = 1
-  for (const c of visuales) {
+  for (const c of cuerpos) {
     const r = Math.hypot(c.posicion[0], c.posicion[1], c.posicion[2])
     if (r > maxR) maxR = r
   }

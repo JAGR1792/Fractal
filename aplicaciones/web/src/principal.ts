@@ -52,6 +52,8 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     leerTiempo?: () => number
     leerBloqueActual?: () => Float32Array | null
     leerPosicionesActuales?: () => number[] | null
+    fijarRejilla?: (visible: boolean) => void
+    leerRejilla?: () => boolean
     destruir?: () => void
   }
 
@@ -124,6 +126,12 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   })
   const vel = document.getElementById('vel') as HTMLInputElement | null
   vel?.addEventListener('input', () => control.fijarVelocidad(Number(vel.value)))
+  // Rejilla de gravedad: checkbox de la barra, visible por defecto.
+  const chkRejilla = document.getElementById('chkRejilla') as HTMLInputElement | null
+  if (chkRejilla) {
+    control.fijarRejilla?.(chkRejilla.checked)
+    chkRejilla.addEventListener('change', () => control.fijarRejilla?.(chkRejilla.checked))
+  }
 
   const reloj = document.getElementById('tiempo')
   const cajaSandbox = document.getElementById('sandbox')
