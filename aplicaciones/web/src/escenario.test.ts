@@ -11,7 +11,8 @@ describe('escala visual', () => {
     })
     // El radio visual no es el físico, está comprimido y acotado
     expect(vis[0].radioVisual).toBeGreaterThan(vis[1].radioVisual)
-    expect(vis[0].radioVisual).toBeLessThanOrEqual(6.0)
+    expect(vis[0].radioVisual).toBeLessThanOrEqual(3.2)
+    expect(vis[1].radioVisual).toBeGreaterThanOrEqual(0.4)
   })
 
   it('normaliza a mundo visible', () => {

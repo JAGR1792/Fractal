@@ -86,17 +86,19 @@ export function urlTextura(id: string): string | null {
 
 /**
  * Convierte radios físicos (m) a radios visuales (mundo).
- * Usa raíz cúbica para comprimir 3 órdenes de magnitud en ~1 orden visual.
+ * Raíz cúbica: preserva proporciones mejor que el logaritmo (Júpiter se ve
+ * grande sin tragarse a los interiores) y a escala real no se vería nada.
  */
 export function aVisual(escenario: Escenario, exageracion = 800): CuerpoVisual[] {
   void exageracion
   return escenario.cuerpos.map((c, i) => {
-    // Escala logarítmica: comprime 1e6..1e9 m en 0.6..6.0 mundo, preserva orden.
-    const radioVisual = 0.6 + Math.log10(Math.max(c.radio, 1)) * 0.5
+    // cbrt(1e6..1e9 m) en 0.4..3.2 mundo: Júpiter se distingue sin tapar
+    // a los interiores (las posiciones ya comprimen mucho el sistema).
+    const radioVisual = 0.4 + Math.cbrt(Math.max(c.radio, 1)) / 300
     const color = COLORES_POR_ID[c.id.toLowerCase()] ?? COLORES_FALLBACK[i % COLORES_FALLBACK.length]
     return {
       ...c,
-      radioVisual: Math.min(Math.max(radioVisual, 0.6), 6.0),
+      radioVisual: Math.min(Math.max(radioVisual, 0.4), 3.2),
       color,
     }
   })

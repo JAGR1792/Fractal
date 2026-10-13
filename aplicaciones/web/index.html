@@ -11,6 +11,7 @@
       #barra { display: flex; gap: 10px; padding: 6px 12px; align-items: center; background: rgba(18, 18, 42, 0.92); font-size: 13px; }
       #barra button { background: #2a2a5a; color: #fff; border: 1px solid #555; border-radius: 8px; padding: 5px 10px; cursor: pointer; }
       #barra button:hover { background: #3a3a7a; }
+      #barra select { background: #1a1a3a; color: #eee; border: 1px solid #555; border-radius: 8px; padding: 4px 6px; font-size: 13px; cursor: pointer; }
       #btnPausa { min-width: 86px; }
       #vel { width: 90px; accent-color: #7DE2FC; }
       #tiempo { color: #7DE2FC; font-variant-numeric: tabular-nums; min-width: 86px; }
@@ -53,6 +54,10 @@
     <div id="app">
       <div id="barra">
         <strong>Fractal</strong>
+        <select id="selEscenario" title="Escenario">
+          <option value="dos_cuerpos">Tierra-Luna</option>
+          <option value="sistema_solar">Sistema Solar</option>
+        </select>
         <button id="btnPausa">Pausar</button>
         <label>Velocidad <input id="vel" type="range" min="0.1" max="10" step="0.1" value="1" /></label>
         <span id="tiempo" title="Tiempo simulado">—</span>
