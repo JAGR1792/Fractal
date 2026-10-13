@@ -7,7 +7,7 @@ Simulador orbital 3D educativo — explora el Sistema Solar, modifica las condic
 - **Física newtoniana** con Velocity Verlet (conservación de energía a largo plazo)
 - **Visualización 3D** con doble renderizador: ULTRA (WebGPU nativo + WASM/wgpu, máximo rendimiento) y LITE (WebGL2 mínimo, compatibilidad escolar)
 - **API asíncrona** con Axum + Tokio (simulaciones en background)
-- **Frontend** con Vue 3 + TypeScript + Vite
+- **Frontend** TypeScript puro + Vite (sin framework de escena)
 - **Código y documentación en español**
 - **Tests científicos** que validan la física contra soluciones analíticas
 
@@ -17,25 +17,47 @@ Simulador orbital 3D educativo — explora el Sistema Solar, modifica las condic
 Fractal/
 ├── codigo/
 │   ├── fisica/          ← Motor gravitacional (biblioteca pura, sin dependencias)
+│   │   └── tests/       ← Tests científicos + benches/ (criterion)
 │   ├── renderizado/     ← Interpolación y culling en Rust (compila a WASM para ULTRA)
 │   └── api/             ← Servidor Axum (Etapa 3)
+│       └── tests/       ← Tests de integración del API
 ├── aplicaciones/
-│   └── web/             ← Frontend Vue 3 + TypeScript + Vite
-│       ├── ultra/       ← Renderer WebGPU nativo + WGSL + WASM (máximo rendimiento)
-│       └── lite/        ← Renderer WebGL2 mínimo (compatibilidad escolar)
+│   └── web/             ← Frontend TypeScript + Vite (sin framework de escena)
+│       ├── src/ultra/   ← Renderer WebGPU nativo + WGSL + WASM (máximo rendimiento)
+│       ├── src/lite/    ← Renderer WebGL2 mínimo (compatibilidad escolar)
+│       └── public/      ← Texturas NASA y copia servible de los escenarios
 ├── datos/
-│   └── escenarios/      ← Escenarios JSON de referencia
+│   └── escenarios/      ← Escenarios JSON de referencia (fuente de verdad)
 ├── documentacion/
 │   ├── cientifico/      ← Física, integración, validación
-│   ├── arquitectura/    ← ADRs, decisiones de diseño
-│   └── educativo/       ← Guías para docentes
-├── tests/
-│   ├── cientificos/     ← Tests de física (sin servidor ni gráficos)
-│   └── integracion/     ← Tests de API + cliente
+│   ├── arquitectura/    ← ADRs, decisiones de diseño, renderizador
+│   ├── comportamientos_mejorables.md ← Lo que se ve mal, con causa y arreglo
+│   └── pasos_siguientes.md           ← Mapa vivo del proyecto
 ├── CONTRIBUTING.md      ← Guía de contribución
 ├── clippy.toml          ← Configuración del linter
 └── rustfmt.toml         ← Configuración del formateador
 ```
+
+Cada crate y el frontend llevan sus tests al lado: no hay carpeta `tests/` en la
+raíz del repositorio.
+
+## Cómo ejecutar
+
+```bash
+# Rust: física, renderizado y API (workspace raíz)
+cargo test --workspace --all-features
+cargo run -p fractal-api          # API en http://localhost:3000 (GET /salud)
+
+# Web: frontend ULTRA/LITE
+cd aplicaciones/web
+npm install
+npm run dev                       # Vite en http://localhost:5173
+npm test                          # vitest
+npm run build                     # tsc + bundle de producción
+```
+
+En el navegador, `?perfil=ultra` fuerza WebGPU y `?perfil=lite` fuerza WebGL2
+(ver `documentacion/arquitectura/renderizador.md`).
 
 ## Estado del proyecto
 
@@ -61,9 +83,10 @@ Fractal/
 **Etapa 3 — API + sandbox:** en curso
 
 - [x] Axum + jobs en background, protocolo binario `Float32Array`
-- [x] Sandbox con parámetros en vivo, flujo infinito encadenado
-- [ ] Persistencia, compartir por link, modo en vivo con debounce
-- [ ] Streaming continuo (diseño en `documentacion/plan_continuidad.md`)
+- [x] Sandbox con parámetros en vivo (debounce 700 ms, sin botón Lanzar)
+- [x] Sesiones vivas con cursor: sin tramos, sin reinicios (ADR-0007)
+- [ ] Persistencia y compartir por link o id de sesión
+- [ ] Suavizado ε recomendado por defecto y `dt` adaptativo
 
 **Mejorable (siempre al día):** ver
 [`documentacion/comportamientos_mejorables.md`](documentacion/comportamientos_mejorables.md)

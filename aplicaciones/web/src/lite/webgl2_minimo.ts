@@ -5,10 +5,11 @@
 
 import { aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, tipoPlaneta, urlTextura } from '../escenario'
 import { camaraInicial, conectarControles, matrizProyeccion, matrizVista, multiplicar, type EstadoCamara } from '../camara'
-import { crearEstela, empujarEstela, generarEstrellas, type Estela } from '../estelas'
+import { aSegmentos, crearEstela, empujarEstela, generarEstrellas, PASO_ESTELA_SIM, RegistroEstela, type Estela } from '../estelas'
 import { crearSistema, actualizar as actualizarChispas, aIntercalado as chispasIntercaladas, explotar as explotarChispas, puedeExplotar as puedeExplotarChispas } from '../particulas'
 import { detectarImpactos } from '../mecanica'
 import { interpolarBloque } from '../binario'
+import { avanzar, bloqueActual, crearFrontera, instanteDe, reanclar } from '../frontera'
 import type { FuenteEstados } from '../api'
 
 const VS = `#version 300 es
@@ -245,9 +246,12 @@ export function montarLite(
   const chispas = crearSistema(800)
   const ultimasChispas = new Map<string, number>()
   const estelas: Estela[] = []
+  const registroEstela = new RegistroEstela(PASO_ESTELA_SIM, 600)
   const bufEstela = gl.createBuffer()!
   let tikEstela = 0
   let estelasDe = -1
+  /** Época del vuelo: avanza al sembrar una fuente nueva (ver ULTRA/estelas.ts). */
+  let epoca = 0
 
   let visuales = aVisual({
     id: 'demo', nombre: 'Demo', descripcion: '', cuerpos: [
@@ -271,30 +275,23 @@ export function montarLite(
   // Fuente del servidor (igual que ULTRA): interpola fotogramas binarios.
   // Sin módulo ni bucle: persigue la frontera y espera en el borde.
   const RITMO_SIM = 120000
-  let bloques: Float32Array[] | null = fuente && fuente.bloques.length >= 2 ? fuente.bloques : null
   let escalaFuente = fuente?.escala ?? 1
-  let tiempoFuente = bloques ? bloques[0][0] : 0
+  const fro = crearFrontera(fuente && fuente.bloques.length >= 2 ? fuente.bloques : null)
   // Fundido de empalme (~1 s) sobre las posiciones del frame previo.
   // Si se monta YA con servidor, el fondo es el círculo demo (ángulo 0).
-  let fondoPos: Array<[number, number, number]> | null = bloques
+  let fondoPos: Array<[number, number, number]> | null = fro.bloques
     ? visuales.map((c) => {
         const p0 = posMundo.get(c.id) ?? [10, 0, 0]
         return [p0[0], p0[1], p0[2]]
       })
     : null
   let ultimaPos: Array<[number, number, number]> = []
-  let tFondo = bloques ? 0 : 1
-
-  /** Techo de reproducción: tercer bloque desde el final (margen de 2). */
-  function techoFuente(): number {
-    if (!bloques || bloques.length < 3) return -Infinity
-    return bloques[bloques.length - 3][0]
-  }
+  let tFondo = fro.bloques ? 0 : 1
 
   /** Posiciones mundo de todos los cuerpos este frame (servidor o demo). */
   function posiciones(t: number): Array<[number, number, number]> {
-    if (bloques) {
-      const b = interpolarBloque(bloques, bloques.length - 1, t)
+    if (fro.bloques) {
+      const b = interpolarBloque(fro.bloques, fro.bloques.length - 1, t)
       if (b) {
         return visuales.map((_v, i) => {
           const o = 1 + i * 6
@@ -325,14 +322,10 @@ export function montarLite(
     }
     gl.viewport(0, 0, lienzo.width, lienzo.height)
     if (!pausado) angulo += 0.004 * velocidad
-    const hayServidor = bloques !== null && bloques.length >= 2
+    const hayServidor = fro.bloques !== null && fro.bloques.length >= 2
     let t = 0
     if (hayServidor) {
-      const techo = techoFuente()
-      if (!pausado && techo > tiempoFuente) {
-        tiempoFuente = Math.min(tiempoFuente + dtS * velocidad * RITMO_SIM, techo)
-      }
-      t = tiempoFuente
+      t = avanzar(fro, dtS, velocidad, RITMO_SIM, pausado)
       spinLite = t
     } else if (!pausado) {
       spinLite += dtS * velocidad * 1440 // segundos sim (ver periodo en GLSL)
@@ -428,35 +421,45 @@ export function montarLite(
     gl.uniform1f(locAlphaOrb, 1)
     gl.bindVertexArray(vaoOrb)
     tikEstela += 1
-    // Estelas: historia real de posiciones (demo o servidor, lo que anime).
-    // Crudas (pre-fundido) con marca temporal para cortar pausas.
-    if (!pausado && tikEstela % 2 === 0) {
+    // Estelas: con servidor se muestrean en tiempo SIM con paso fijo (curva
+    // real, no cuerdas); en demo local no hay reloj sim que muestrear, así que
+    // se registra por fotograma como antes.
+    if (!pausado && hayServidor) {
+      const bl = fro.bloques
+      if (bl) {
+        visuales.forEach((_c, i) => {
+          registroEstela.registrar(estelas[i], fro.tiempo, epoca, (ts) => {
+            const b = interpolarBloque(bl, bl.length - 1, ts)
+            if (!b) return null
+            const o = 1 + i * 6
+            return [b[o] * escalaFuente, b[o + 2] * escalaFuente, b[o + 1] * escalaFuente]
+          })
+        })
+      }
+    } else if (!pausado && tikEstela % 2 === 0) {
       const ahoraEstela = performance.now()
       visuales.forEach((_c, i) => {
         const p = posCruda[i] ?? [10, 0, 0]
         const e = estelas[i]
-        if (e) empujarEstela(e, [p[0], p[1], p[2]], ahoraEstela)
+        if (e) empujarEstela(e, [p[0], p[1], p[2]], spinLite, epoca, ahoraEstela)
       })
     }
+    // Line-list, no strip: así los cortes de la estela (hueco, época, salto
+    // imposible) son huecos de verdad. La lógica de corte vive en `aSegmentos`
+    // (compartida con ULTRA) y está cubierta por tests.
     visuales.forEach((c, i) => {
       const e = estelas[i]
       if (!e || e.puntos.length < 2) return
-      const n = e.puntos.length
-      const tira = new Float32Array(n * 4)
-      for (let s = 0; s < n; s++) {
-        tira[s * 4] = e.puntos[s][0]
-        tira[s * 4 + 1] = e.puntos[s][1]
-        tira[s * 4 + 2] = e.puntos[s][2]
-        tira[s * 4 + 3] = s / n
-      }
+      const segs = aSegmentos(e, c.color, hayServidor ? PASO_ESTELA_SIM : 0)
+      if (segs.length < 14) return
       gl.uniform3f(locColorOrb, c.color[0], c.color[1], c.color[2])
       gl.bindBuffer(gl.ARRAY_BUFFER, bufEstela)
-      gl.bufferData(gl.ARRAY_BUFFER, tira, gl.DYNAMIC_DRAW)
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(segs), gl.DYNAMIC_DRAW)
       gl.enableVertexAttribArray(0)
-      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 16, 0)
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0)
       gl.enableVertexAttribArray(1)
-      gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 16, 12)
-      gl.drawArrays(gl.LINE_STRIP, 0, n)
+      gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 28, 24)
+      gl.drawArrays(gl.LINES, 0, segs.length / 7)
     })
     gl.bindVertexArray(null)
     gl.disable(gl.BLEND)
@@ -475,37 +478,39 @@ export function montarLite(
         fondoPos = null
         tFondo = 1
       }
-      bloques = f && f.bloques.length >= 2 ? [...f.bloques] : null
       // COPIA, no referencia (ver ULTRA: compartir duplicaba y sobrepodaba).
+      reanclar(fro, f && f.bloques.length >= 2 ? [...f.bloques] : null)
       escalaFuente = f?.escala ?? 1
-      tiempoFuente = bloques ? bloques[0][0] : 0
-      if (limpiar) for (const e of estelas) e.puntos.length = 0
+      // El muestreo en tiempo sim parte de cero en cada fuente.
+      registroEstela.reiniciar()
+      if (limpiar) {
+        for (const e of estelas) e.puntos.length = 0
+      } else {
+        // Resembrado: la estela es historia real, pero de otro vuelo. Se marca
+        // época nueva para no unir los dos tramos con una recta.
+        epoca += 1
+      }
     },
     leerTiempo: () => spinLite,
     anexarBloques: (nuevos: Float32Array[]) => {
-      if (!bloques || nuevos.length === 0) return
-      bloques.push(...nuevos)
+      if (!fro.bloques || nuevos.length === 0) return
+      fro.bloques.push(...nuevos)
     },
     podar: (mantenerDesde: number) => {
-      if (!bloques || bloques.length === 0) return
+      const b = fro.bloques
+      if (!b || b.length === 0) return
       let cortar = 0
-      while (cortar < bloques.length - 2 && bloques[cortar][0] < mantenerDesde) cortar++
-      if (cortar > 0) {
-        bloques.splice(0, cortar)
-        if (tiempoFuente < bloques[0][0]) tiempoFuente = bloques[0][0]
-      }
+      while (cortar < b.length - 2 && b[cortar][0] < mantenerDesde) cortar++
+      if (cortar > 0) b.splice(0, cortar)
     },
-    leerBloqueActual: () => {
-      if (!bloques || bloques.length < 2) return null
-      return interpolarBloque(bloques, bloques.length - 1, tiempoFuente)
-    },
+    leerBloqueActual: () => bloqueActual(fro),
     leerPosicionesActuales: () => {
       // Deshace el mapeo mundo [x*e, z*e, y*e] → SI (igual en demo y servidor,
       // porque posMundo usa la misma convención que la fuente).
-      const e = bloques ? escalaFuente : escalaMundo(visuales)
+      const e = fro.bloques ? escalaFuente : escalaMundo(visuales)
       if (!(e > 0)) return null
       const salida: number[] = []
-      for (const [x, y, z] of posiciones(tiempoFuente)) salida.push(x / e, z / e, y / e)
+      for (const [x, y, z] of posiciones(instanteDe(fro))) salida.push(x / e, z / e, y / e)
       return salida
     },
     destruir: () => { vivo = false; desconectar() },

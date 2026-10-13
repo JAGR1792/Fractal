@@ -1,5 +1,5 @@
 import { elegirPerfil, type PerfilRender } from './detector'
-import { cargarEscenario, aVisual, type CuerpoVisual, type Escenario } from './escenario'
+import { cargarEscenario, aVisual, escalaMundo, type CuerpoVisual, type Escenario } from './escenario'
 import {
   actualizarSesion,
   baseApi,
@@ -9,8 +9,7 @@ import {
   type FuenteEstados,
 } from './api'
 import { montarSandbox, aplicarEdicion, pintarTelemetria, type EdicionSandbox } from './sandbox'
-import { elementosOrbitales, formatearDistancia, G } from './mecanica'
-import { partirBloques } from './binario'
+import { elementosDeCuerpo, formatearDistancia } from './mecanica'
 
 /**
  * Entrada web Fractal ULTRA/LITE con sesiones vivas (ADR-0007).
@@ -86,7 +85,7 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     const creada = await crearSesion(baseApiUrl, vis, dt0, 0)
     if (!creada) return false
     sesionId = creada.id
-    const escalaM = (await import('./escenario')).escalaMundo(vis)
+    const escalaM = escalaMundo(vis)
     escala = escalaM
     const primera = await leerSesion(baseApiUrl, sesionId, 0, 300)
     if (!primera || primera.bloques.length < 2) {
@@ -226,13 +225,12 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
       const selId = (document.getElementById('sbCuerpo') as HTMLSelectElement | null)?.value ?? ''
       const blk = control.leerBloqueActual?.() ?? null
       const idx = base.findIndex((c) => c.id === selId)
-      if (blk && idx > 0 && base.length > 0) {
-        const o = 1 + idx * 6
-        const el = elementosOrbitales(
-          [blk[o] - blk[1], blk[o + 1] - blk[2], blk[o + 2] - blk[3]],
-          [blk[o + 3] - blk[4], blk[o + 4] - blk[5], blk[o + 5] - blk[6]],
-          G * base[0].masa,
-        )
+      if (blk && idx >= 0 && base.length > 0) {
+        // El central lo decide la gravedad sobre el estado VIVO del bloque, no
+        // la masa del primero de la lista: con la Luna elegida, su central es
+        // la Tierra (si no, sma/período salían referidos al Sol).
+        const estado = visualesDesdeBloque(base, blk)
+        const el = elementosDeCuerpo(estado, idx)
         pintarTelemetria(cajaSandbox, el ? {
           dist: formatearDistancia(el.distancia),
           vel: `${(el.velocidad / 1000).toFixed(2)} km/s`,

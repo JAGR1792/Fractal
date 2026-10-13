@@ -28,11 +28,16 @@ Propuesto | Aceptado | Rechazado | Deprecado | Superseded por ADR-NNN
 
 | ADR | Título | Estado |
 |-----|--------|--------|
-| [ADR-0001](ADRs/0001-motor-fisico-sin-dependencias.md) | Motor físico sin dependencias externas | Aceptado |
-| [ADR-0002](ADRs/0002-velocity-verlet-sobre-rk4.md) | Velocity Verlet sobre Runge-Kutta 4 | Aceptado |
-| [ADR-0003](ADRs/0003-unidades-si-internas.md) | Unidades SI internas con conversión en bordes | Aceptado |
-| [ADR-0004](ADRs/0004-codigo-y-documentacion-en-espanol.md) | Código y documentación en español | Aceptado |
-| [ADR-0005](ADRs/0005-renderizador-ultra-webgpu-wasm.md) | Renderizador ULTRA WebGPU+WASM sin motores | Aceptado |
+| [ADR-0001](0001-motor-fisico-sin-dependencias.md) | Motor físico sin dependencias externas | Aceptado |
+| [ADR-0002](0002-velocity-verlet-sobre-rk4.md) | Velocity Verlet sobre Runge-Kutta 4 | Aceptado |
+| [ADR-0003](0003-unidades-si-internas.md) | Unidades SI internas con conversión en bordes | Aceptado |
+| [ADR-0004](0004-codigo-y-documentacion-en-espanol.md) | Código y documentación en español | Aceptado |
+| [ADR-0005](0005-renderizador-ultra-webgpu-wasm.md) | Renderizador ULTRA WebGPU+WASM sin motores | Aceptado |
+| [ADR-0006](0006-api-axum-tokio.md) | API Axum + Tokio para simulaciones en background | Aceptado |
+| [ADR-0007](0007-sesiones-vivas-streaming.md) | Sesiones vivas con cursor (streaming por polling) | Aceptado |
+
+> Los enlaces son relativos a este mismo directorio (`ADRs/`), por eso apuntan
+> al nombre del archivo sin repetir la carpeta.
 
 ## Cómo proponer un nuevo ADR
 

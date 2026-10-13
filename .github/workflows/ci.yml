@@ -64,7 +64,7 @@ jobs:
       - name: Compilar release
         run: cargo build --workspace --release
 
-  # Verificar TypeScript del frontend (ULTRA/LITE, sin motores)
+  # Verificar TypeScript y tests del frontend (ULTRA/LITE, sin motores)
   web-tipos:
     name: Web (tsc + vitest)
     runs-on: ubuntu-latest
@@ -81,6 +81,46 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
       - name: Verificar tipos
-        run: npx tsc --noEmit --skipLibCheck
+        run: npm run tipo
       - name: Tests web
-        run: npx vitest run
+        run: npm test
+
+  # Lint del frontend (eslint.config.js es la única fuente de verdad)
+  web-lint:
+    name: Web (eslint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aplicaciones/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: aplicaciones/web/package-lock.json
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+
+  # Verificar que el bundle de producción se construye de verdad
+  web-build:
+    name: Web (build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aplicaciones/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: aplicaciones/web/package-lock.json
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Compilar bundle
+        run: npm run build
+      - name: Comprobar que el bundle existe
+        run: test -f dist/index.html

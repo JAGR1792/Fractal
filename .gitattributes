@@ -1,0 +1,31 @@
+# Normalización de finales de línea y tratamiento de binarios.
+#
+# El desarrollo ocurre en Windows y el CI en Linux: sin esta normalización, un
+# `cargo fmt` local puede escribirse con CRLF y hacer fallar el job de formato
+# en CI (ya pasó: ver historial de runs rojos de rustfmt).
+* text=auto eol=lf
+
+# Rust, TypeScript, JSON y documentación: siempre LF en el repositorio.
+*.rs   text eol=lf
+*.toml text eol=lf
+*.ts   text eol=lf
+*.js   text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.md   text eol=lf
+*.html text eol=lf
+*.css  text eol=lf
+*.wgsl text eol=lf
+
+# Binarios: no tocar ni intentar diffear.
+*.jpg  binary
+*.jpeg binary
+*.png  binary
+*.webp binary
+*.gif  binary
+*.ico  binary
+
+# Los lockfiles de npm se diffclean bien como texto, pero no deben normalizarse
+# a mano: npm los reescribe.
+package-lock.json -text -merge -diff

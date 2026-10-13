@@ -6,7 +6,8 @@ import { interpolarBloque } from '../binario'
 import planetaWGSL from './sombreadores/planeta.wgsl?raw'
 import orbitaWGSL from './sombreadores/orbita.wgsl?raw'
 import puntosWGSL from './sombreadores/puntos.wgsl?raw'
-import { aSegmentos, crearEstela, empujarEstela, generarEstrellas, type Estela } from '../estelas'
+import { aSegmentos, crearEstela, generarEstrellas, PASO_ESTELA_SIM, RegistroEstela, type Estela } from '../estelas'
+import { avanzar, bloqueActual, crearFrontera, reanclar } from '../frontera'
 import { actualizar, aIntercalado, crearSistema, explotar, puedeExplotar } from '../particulas'
 import { detectarImpactos } from '../mecanica'
 
@@ -159,8 +160,10 @@ export async function montarUltra(
   const posMundo = normalizarPosiciones(visuales)
 
   const cam: EstadoCamara = camaraInicial(70)
-  let necesitaVista = true
-  const desconectar = conectarControles(lienzo, cam, () => { necesitaVista = true })
+  // Los controles mutan `cam`; la matriz de vista se recalcula cada fotograma
+  // (ver `const vista = matrizVista(cam)` en el bucle), así que no hace falta
+  // ninguna invalidación diferida aquí.
+  const desconectar = conectarControles(lienzo, cam, () => undefined)
 
   // Geometría esfera
   const esfera = esferaUnitaria()
@@ -270,10 +273,18 @@ export async function montarUltra(
   const ultimasChispas = new Map<string, number>()
 
   // Estelas: últimos 600 centros por cuerpo (una órbita entera), un draw merged.
+  // Se muestrean en tiempo SIM (ver `PASO_ESTELA_SIM`): registrar por fotograma
+  // de pared hacía que a alta velocidad cada arista cruzara la órbita en recta.
   const LARGO_ESTELA = 600
   const estelas: Estela[] = visuales.map(() => crearEstela(LARGO_ESTELA))
+  const registroEstela = new RegistroEstela(PASO_ESTELA_SIM, LARGO_ESTELA)  /**
+   * Época del vuelo. Avanza en cada siembra de fuente: una bifurcación es un
+   * camino NUEVO, no la continuación del anterior. La posición puede ser
+   * continua, pero la física no, y la estela no debe unir los dos vuelos
+   * (esa era la recta y la cúspide que cruzaban la pantalla).
+   */
+  let epoca = 0
   const bufEstelas: any = device.createBuffer({ size: Math.max(n * LARGO_ESTELA * 2 * 7 * 4, 16), usage: 0x20 | 0x8 })
-  let tikEstela = 0
 
   let pausado = false
   let velocidad = 1
@@ -353,26 +364,20 @@ export async function montarUltra(
   // detiene en el borde hasta que llegan más datos. Ritmo: una órbita lunar
   // de referencia (~2.4e6 s) cada 20 s de pared a velocidad 1x.
   const RITMO_SIM = 120000
-  let bloques: Float32Array[] | null = fuente && fuente.bloques.length >= 2 ? fuente.bloques : null
   let escalaFuente = fuente?.escala ?? 1
-  let tiempoFuente = bloques ? bloques[0][0] : 0
+  const fro = crearFrontera(fuente && fuente.bloques.length >= 2 ? fuente.bloques : null)
 
-  /** Techo de reproducción: tercer bloque desde el final (margen de 2). */
-  function techoFuente(): number {
-    if (!bloques || bloques.length < 3) return -Infinity
-    return bloques[bloques.length - 3][0]
-  }
   // Si se monta YA con servidor, el fondo es el círculo demo (ángulo 0):
   // el primer segundo interpola demo→física real, sin salto único.
-  if (bloques) {
+  if (fro.bloques) {
     fondo = centros.slice()
     tFondo = 0
   }
 
   /** Escribe en `c` los centros interpolados del instante `t` (segundos sim). */
   function centrosServidor(c: Float32Array, t: number): void {
-    if (!bloques) return
-    const b = interpolarBloque(bloques, bloques.length - 1, t)
+    if (!fro.bloques) return
+    const b = interpolarBloque(fro.bloques, fro.bloques.length - 1, t)
     if (!b) return
     visuales.forEach((_v, i) => {
       const base = 1 + i * 6
@@ -396,20 +401,16 @@ export async function montarUltra(
       texProf.destroy?.()
       texProf = device.createTexture({ size: [w, h], sampleCount: 1, format: 'depth24plus', usage: TU.RENDER_ATTACHMENT })
       vistaProf = texProf.createView()
-      necesitaVista = true
     }
     if (!pausado) angulo += 0.002 * velocidad
     const c = new Float32Array(centros)
-    const hayServidor = bloques !== null && bloques.length >= 2
+    const hayServidor = fro.bloques !== null && fro.bloques.length >= 2
     if (hayServidor) {
       // Persigue la frontera: avanza a ritmo fijo y espera en el borde.
-      const techo = techoFuente()
-      let t = tiempoFuente
-      if (!pausado && techo > t) {
-        t = Math.min(t + (dtMs / 1000) * velocidad * RITMO_SIM, techo)
-      }
-      spinSim += t - tiempoFuente
-      tiempoFuente = t
+      const t = avanzar(fro, dtMs / 1000, velocidad, RITMO_SIM, pausado)
+      // `max(0, …)` porque la rotación propia no puede retroceder aunque una
+      // poda reancle el reloj por detrás de lo ya mostrado.
+      spinSim += Math.max(0, t - spinSim)
       centrosServidor(c, t)
     } else {
       // Demo local sin servidor: 1440 s sim por segundo real (la tierra
@@ -425,10 +426,9 @@ export async function montarUltra(
         c[i * 4 + 2] = Math.sin(a) * r
       })
     }
-    // Fundido de empalme: mezcla la foto previa durante ~1 s.
-    // La estela registra la física CRUDA (pre-fundido): si no, cada empalme
-    // dibuja un rizo fantasma en la trayectoria.
-    const cCruda = c.slice()
+    // Fundido de empalme: mezcla la foto previa durante ~1 s. La estela no se
+    // alimenta de aquí (reconstruye la trayectoria del servidor por su cuenta),
+    // así que el fundido no le deja rizos fantasma.
     if (tFondo < 1 && fondo && fondo.length === c.length) {
       tFondo = Math.min(1, tFondo + dtMs / 1000)
       const s = tFondo * tFondo * (3 - 2 * tFondo)
@@ -455,19 +455,26 @@ export async function montarUltra(
       actualizar(chispas, Math.min(dtMs / 1000, 0.1))
     }
 
-    // Estelas: un punto cada 2 frames (~20 s de historia a 60 fps).
-    // Se registra la física cruda (sin fundido) con su marca temporal.
-    tikEstela += 1
-    if (!pausado && tikEstela % 2 === 0) {
-      const ahoraEstela = performance.now()
-      visuales.forEach((_v, i) => {
-        empujarEstela(estelas[i], [cCruda[i * 4], cCruda[i * 4 + 1], cCruda[i * 4 + 2]], ahoraEstela)
-      })
+    // Estelas: muestreo de paso fijo en tiempo SIM (curva real, no cuerdas).
+    // Se registra la física cruda (sin fundido) y la posición se reconstruye
+    // interpolando los bloques, que es lo que hace el propio render.
+    if (!pausado) {
+      const bl = fro.bloques
+      if (bl) {
+        visuales.forEach((_v, i) => {
+          registroEstela.registrar(estelas[i], fro.tiempo, epoca, (t) => {
+            const b = interpolarBloque(bl, bl.length - 1, t)
+            if (!b) return null
+            const o = 1 + i * 6
+            return [b[o] * escalaFuente, b[o + 2] * escalaFuente, b[o + 1] * escalaFuente]
+          })
+        })
+      }
     }
     const vertsEstela: number[] = []
     visuales.forEach((v, i) => {
       const e = estelas[i]
-      if (e && e.puntos.length >= 2) vertsEstela.push(...aSegmentos(e, v.color))
+      if (e && e.puntos.length >= 2) vertsEstela.push(...aSegmentos(e, v.color, PASO_ESTELA_SIM))
     })
     const cuentaEstela = vertsEstela.length / 7
     if (cuentaEstela > 0) {
@@ -527,7 +534,6 @@ export async function montarUltra(
     paso.drawIndexed(esfera.indices.length, n, 0, 0, 0)
     paso.end()
     device.queue.submit([cod.finish()])
-    necesitaVista = false
     cuadros += 1
     // OK honesto: solo si no hubo ningún error de GPU antes.
     const aviso = document.getElementById('aviso')
@@ -551,39 +557,40 @@ export async function montarUltra(
         fondo = null
         tFondo = 1
       }
-      bloques = f && f.bloques.length >= 2 ? [...f.bloques] : null
       // COPIA, no referencia: el dueño del arreglo de principal también lo
       // muta (poll/prune). Compartirlo duplicaba bloques y podaba dos veces,
       // y eso dibujaba los saltos rectos.
+      reanclar(fro, f && f.bloques.length >= 2 ? [...f.bloques] : null)
       escalaFuente = f?.escala ?? 1
-      tiempoFuente = bloques ? bloques[0][0] : 0
+      // El muestreo en tiempo sim parte de cero en cada fuente.
+      registroEstela.reiniciar()
       // Solo al bifurcar se limpia: en stream la estela es historia continua.
-      if (limpiar) for (const e of estelas) e.puntos.length = 0
+      if (limpiar) {
+        for (const e of estelas) e.puntos.length = 0
+      } else {
+        // Resembrado: la estela se conserva (es historia real) pero se marca
+        // una época nueva para que el empalme no se dibuje.
+        epoca += 1
+      }
     },
     leerSeleccion: () => seleccionado,
     leerTiempo: () => spinSim,
-    leerBloqueActual: () => {
-      if (!bloques || bloques.length < 2) return null
-      const t = Math.min(tiempoFuente, techoFuente())
-      return interpolarBloque(bloques, bloques.length - 1, t)
-    },
+    leerBloqueActual: () => bloqueActual(fro),
     anexarBloques: (nuevos: Float32Array[]) => {
-      if (!bloques || nuevos.length === 0) return
-      bloques.push(...nuevos)
+      if (!fro.bloques || nuevos.length === 0) return
+      fro.bloques.push(...nuevos)
     },
     podar: (mantenerDesde: number) => {
-      if (!bloques || bloques.length === 0) return
+      const b = fro.bloques
+      if (!b || b.length === 0) return
       let cortar = 0
-      while (cortar < bloques.length - 2 && bloques[cortar][0] < mantenerDesde) cortar++
-      if (cortar > 0) {
-        bloques.splice(0, cortar)
-        if (tiempoFuente < bloques[0][0]) tiempoFuente = bloques[0][0]
-      }
+      while (cortar < b.length - 2 && b[cortar][0] < mantenerDesde) cortar++
+      if (cortar > 0) b.splice(0, cortar)
     },
     leerPosicionesActuales: () => {
       // Deshace el mapeo mundo [x*e, z*e, y*e] → SI. En demo la escala es
       // la del escenario; con servidor, la de la fuente.
-      const e = bloques ? escalaFuente : escalaMundo(visuales)
+      const e = fro.bloques ? escalaFuente : escalaMundo(visuales)
       if (!(e > 0)) return null
       const salida: number[] = []
       visuales.forEach((_v, i) => {

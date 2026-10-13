@@ -19,25 +19,28 @@
 
 ```
 Fractal/
-├── docs/
-│   ├── cientifico/          ← Física, integración numérica, validación
-│   ├── arquitectura/        ← Decisiones de diseño, ADRs
-│   ├── api/                 ← Especificación de endpoints
-│   └── educativo/           ← Guías para docentes y estudiantes
-├── datos/
-│   └── escenarios/          ← Escenarios JSON de referencia
-├── codigo/                  ← Código fuente (Etapa 1+)
+├── codigo/                  ← Código fuente y sus tests (era `src/` en el plan inicial)
 │   ├── fisica/              ← Motor gravitacional (biblioteca pura)
+│   │   ├── src/             ← Vec3, cuerpo, gravedad, integrador, estado, métricas
+│   │   ├── tests/           ← Tests científicos de física
+│   │   └── benches/         ← Benchmarks (criterion)
 │   ├── renderizado/         ← Interpolación y culling en Rust (WASM para ULTRA)
-│   ├── escenarios/          ← Carga y validación de escenarios
 │   └── api/                 ← Servidor Axum
+│       ├── src/             ← Rutas, modelos, almacén, binario, sesión
+│       └── tests/           ← Tests de integración del API
 ├── aplicaciones/
-│   └── web/                 ← Frontend Vue 3 + TypeScript + Vite (ULTRA/LITE)
-├── tests/
-│   ├── cientificos/         ← Tests de física (sin servidor ni gráficos)
-│   ├── integracion/         ← Tests de API + cliente
-│   └── rendimiento/         ← Benchmarks (criterion)
-└── documentacion/           ← Documentación general del proyecto
+│   └── web/                 ← Frontend TypeScript + Vite (sin framework de escena)
+│       ├── src/             ← ULTRA (`ultra/`), LITE (`lite/`), sandbox, cámara
+│       ├── src/**/*.test.ts ← Tests unitarios (vitest)
+│       └── public/          ← Texturas NASA y copia servible de los escenarios
+├── datos/
+│   └── escenarios/          ← Escenarios JSON de referencia (fuente de verdad)
+├── documentacion/
+│   ├── cientifico/          ← Física, integración numérica, validación
+│   ├── arquitectura/        ← Decisiones de diseño, ADRs, renderizador
+│   ├── comportamientos_mejorables.md ← Lo que hoy se ve mal, con causa y arreglo
+│   └── pasos_siguientes.md  ← Mapa vivo del proyecto
+└── Cargo.toml               ← Workspace Rust (fisica, renderizado, api)
 ```
 
 **Regla de oro:** el motor físico (`codigo/fisica/`) NO puede depender de Axum, Tokio, WebGPU, WebGL ni de ningún framework. Debe compilar y testearse solo.
@@ -70,10 +73,17 @@ git checkout -b contribucion/tu-funcionalidad
 
 # 3. Hacer cambios + tests
 
-# 4. Verificar calidad
-cargo fmt --check
-cargo clippy -- -D warnings
-cargo test
+# 4. Verificar calidad — Rust (mismos comandos que el CI)
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+
+# 4b. Verificar calidad — Web (desde aplicaciones/web)
+cd aplicaciones/web
+npm run tipo      # tsc --noEmit
+npm run lint      # eslint
+npm test          # vitest run
+npm run build     # tsc + vite build
 
 # 5. Commit
 git commit -m "tipo(alcance): descripcion corta"
@@ -81,6 +91,9 @@ git commit -m "tipo(alcance): descripcion corta"
 # 6. Push y Pull Request
 git push origin contribucion/tu-funcionalidad
 ```
+
+> El CI corre **lo mismo** que esta lista. Si pasa en local con estos comandos,
+> pasa en CI: no hay verificación oculta.
 
 ---
 
@@ -103,13 +116,19 @@ git push origin contribucion/tu-funcionalidad
 4. **Error handling:** usar `Result` o `Option`, nunca `unwrap()` en producción
 5. **Sin `panic!`:** en código de biblioteca, retornar `Result` con error descriptivo
 
-### Vue / TypeScript
+### TypeScript / Frontend
 
 | Herramienta | Comando | Qué verifica |
 |-------------|---------|--------------|
-| `vue-tsc` | `npx vue-tsc --noEmit` | Tipos TypeScript |
-| `eslint` | `npx eslint .` | Estilo de código |
-| `vitest` | `npx vitest run` | Tests unitarios |
+| `tsc` | `npm run tipo` | Tipos TypeScript |
+| `eslint` | `npm run lint` | Estilo de código (config plana en `eslint.config.js`) |
+| `vitest` | `npm test` | Tests unitarios |
+| `vite` | `npm run build` | Que el bundle de producción se construye |
+
+Todos se ejecutan desde `aplicaciones/web/`. El frontend es **TypeScript puro**
+sobre DOM + WebGPU/WebGL2: no hay SFC, ni runtime de framework, ni plugin de
+framework en `vite.config.ts`. Si necesitas estado reactivo, hazlo con funciones
+y eventos explícitos, no añadiendo un framework (el render es el que manda).
 
 ### JSON (escenarios)
 
@@ -157,9 +176,9 @@ Todo código nuevo DEBE incluir:
 ### Tests científicos (obligatorios)
 
 ```rust
-// tests/cientificos/orbita_circular.rs
+// codigo/fisica/tests/cientificos.rs
 #[test]
-fn orbita_circular_dos_cuerpos_conradio_constante() {
+fn orbita_circular_dos_cuerpos_mantiene_distancia() {
     // Tierra-Luna con velocidad circular exacta
     // Verificar que |r(t)| permanece constante
 }
@@ -169,19 +188,29 @@ fn orbita_circular_dos_cuerpos_conradio_constante() {
 
 ### Tests de integración
 
-```bash
-# tests/api/simulacion.rs
+```rust
+// codigo/api/tests/flujo_minimo.rs
 #[tokio::test]
 async fn crear_simulacion_devuelve_id_y_estado() {
-    // POST /api/v1/simulations → 202
-    // GET /api/v1/simulations/{id} → status: "pending"
+    // POST /api/v1/simulaciones → 202
+    // GET /api/v1/simulaciones/{id} → estado: "pendiente"
 }
 ```
+
+### Tests web
+
+```ts
+// aplicaciones/web/src/*.test.ts (vitest, sin navegador)
+```
+
+Los tests viven junto al crate o módulo que prueban: `codigo/*/tests/` para Rust
+y `aplicaciones/web/src/**/*.test.ts` para el frontend. No hay carpeta `tests/`
+en la raíz.
 
 ### Tests de rendimiento
 
 ```bash
-cargo bench --bench sistema_solar
+cargo bench --bench rendimiento
 ```
 
 **Propósito:** detectar regresiones de rendimiento automáticamente.
@@ -242,14 +271,24 @@ docs(cientifico): explicar conservacion de energia
 | Documento | Qué explica |
 |-----------|-------------|
 | `documentacion/arquitectura/ADRs/` | Decisiones de diseño (Architecture Decision Records) |
-| `documentacion/arquitectura/modulos.md` | Separación de responsabilidades |
+| `documentacion/arquitectura/renderizador.md` | ULTRA/LITE, protocolos, umbrales de perfil |
+
+### Documentación de API
+
+| Documento | Qué explica |
+|-----------|-------------|
+| `documentacion/arquitectura/ADRs/0006-api-axum-tokio.md` | Contrato de endpoints, validación y límites |
+| `documentacion/arquitectura/ADRs/0007-sesiones-vivas-streaming.md` | Sesiones con cursor: por qué no hay tramos |
+| `codigo/api/src/rutas.rs` | Rutas reales del servidor (fuente de verdad) |
 
 ### Para docentes
 
 | Documento | Qué explica |
 |-----------|-------------|
-| `documentacion/educativo/guia.md` | Cómo usar Fractal en clase |
-| `documentacion/educativo/experimentos.md` | Experimentos sugeridos |
+| `documentacion/pasos_siguientes.md` | Etapa 5: qué material educativo está planificado |
+
+> **Nota:** las guías para docentes de `documentacion/educativo/` todavía no
+> existen; están planificadas en la Etapa 5 (`pasos_siguientes.md`).
 
 ---
 
@@ -262,10 +301,18 @@ Sí, pero abre un issue primero con la justificación científica. Los cambios e
 No pasa nada, es para eso que están. Pero no puedes mergear hasta que pasen. CI lo bloquea automáticamente.
 
 **¿Necesito saber Rust para contribuir al frontend?**
-No. `apps/web/` es Vue + TypeScript, completamente independiente del motor.
+No. `aplicaciones/web/` es TypeScript puro (DOM + WebGPU/WebGL2), completamente independiente del motor.
 
 **¿Cómo agrego un nuevo escenario?**
-Crea un JSON en `datos/escenarios/` con el formato documentado y un test que verifique que carga correctamente.
+1. Crea el JSON en `datos/escenarios/` (esa carpeta es la fuente de verdad).
+2. Cópialo a `aplicaciones/web/public/datos/`, que es lo que el navegador puede
+   servir: el frontend hace `fetch('/datos/<archivo>.json')`.
+3. Añade el caso a `aplicaciones/web/src/escenario.test.ts` para que la carga
+   quede verificada.
+
+> **Deuda conocida:** los escenarios viven duplicados (`datos/escenarios/` y
+> `aplicaciones/web/public/datos/`) y hoy nada obliga a que coincidan. Si los
+> editas, edita las dos copias; el test de escenarios es la red de seguridad.
 
 ---
 

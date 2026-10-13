@@ -5,7 +5,7 @@
  * polling. Todo fallo devuelve `null`/`false`: demo local sin servidor.
  */
 import type { CuerpoVisual } from './escenario'
-import { VERSION_BINARIO } from './binario'
+import { VERSION_BINARIO, partirBloques } from './binario'
 
 /** Fuente de fotogramas del servidor para los renderers. */
 export interface FuenteEstados {
@@ -129,7 +129,6 @@ export async function leerSesion(
     const cuerpos = Number(res.headers.get('x-fractal-cuerpos') ?? '0')
     const hasta = Number(res.headers.get('x-fractal-hasta') ?? String(desde))
     if (!Number.isFinite(cuerpos) || cuerpos < 1 || !Number.isFinite(hasta)) return null
-    const { partirBloques } = await import('./binario')
     return { bloques: partirBloques(new Float32Array(await res.arrayBuffer()), cuerpos), hasta, cuerpos }
   } catch {
     return null

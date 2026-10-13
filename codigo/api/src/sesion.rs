@@ -114,8 +114,12 @@ impl Sesiones {
 
     /// Lee bloques con `t > desde_t` (hasta `limite`), integrando lo que falte.
     ///
-    /// Devuelve `(bloques, hasta_t)`. Si el cursor quedó atrás de lo podado,
-    /// devuelve desde lo más viejo disponible (el cliente se resincroniza).
+    /// Devuelve `(bloques, hasta_t)`, donde `hasta_t` es el tiempo del último
+    /// bloque ENTREGADO (o `desde_t` si no se entregó ninguno). Ese valor es el
+    /// cursor del siguiente poll: así el cliente no se salta bloques.
+    ///
+    /// Si el cursor quedó atrás de lo podado, devuelve desde lo más viejo
+    /// disponible (el cliente se resincroniza).
     pub async fn leer_desde(
         &self,
         id: &Uuid,
@@ -153,7 +157,6 @@ impl Sesiones {
                 sesion.historial.drain(..exceso);
             }
         }
-        let hasta = sesion.historial.last().map(|e| e.tiempo).unwrap_or(desde_t);
         let bloques: Vec<Estado> = sesion
             .historial
             .iter()
@@ -161,6 +164,13 @@ impl Sesiones {
             .take(limite_sano)
             .cloned()
             .collect();
+        // `hasta` es el tiempo del ÚLTIMO BLOQUE ENTREGADO, no el de lo último
+        // integrado. La integración va por delante a propósito (ventana de
+        // precarga), pero el cursor del cliente debe avanzar solo sobre lo que
+        // ha recibido: si saltara al final de lo integrado, el cliente se
+        // saltaría en silencio los bloques intermedios y el render dibujaría un
+        // hueco temporal enorme como si fuera movimiento continuo.
+        let hasta = bloques.last().map(|e| e.tiempo).unwrap_or(desde_t);
         Some((bloques, hasta))
     }
 
@@ -312,5 +322,57 @@ mod pruebas {
         assert!(ss.cerrar(&id).await);
         assert!(!ss.existe(&id).await);
         assert!(ss.leer_desde(&id, 0.0, 10).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn el_cursor_no_se_salta_bloques_entregados() {
+        // Regresión: `hasta` era el tiempo de lo último INTEGRADO (la integración
+        // va por delante, con ventana de precarga), así que el cliente avanzaba
+        // su cursor por encima de bloques que nunca recibió. Con `limite` pequeño
+        // el hueco era casi toda la tanda y el render lo dibujaba como
+        // movimiento continuo: un teletransporte de millones de segundos.
+        let ss = Sesiones::nuevo();
+        let id = ss.crear(peticion()).await;
+        let paso = 600.0 * 12.0; // dt × cada_n (ver `peticion`)
+        let limite = 4;
+
+        let (primeros, hasta1) = ss.leer_desde(&id, 0.0, limite).await.unwrap();
+        assert_eq!(primeros.len(), limite);
+        assert_eq!(
+            hasta1,
+            primeros.last().unwrap().tiempo,
+            "hasta debe ser el último bloque entregado, no el último integrado"
+        );
+
+        let (segundos, _) = ss.leer_desde(&id, hasta1, limite).await.unwrap();
+        assert!(!segundos.is_empty());
+        assert_eq!(
+            segundos.first().unwrap().tiempo,
+            hasta1 + paso,
+            "el siguiente poll debe continuar justo donde acabó el anterior"
+        );
+
+        // Y encadenando varias vueltas no puede haber ni un hueco ni un repetido.
+        let mut cursor = 0.0;
+        let mut anterior: Option<f64> = None;
+        for _ in 0..6 {
+            let (bloques, hasta) = ss.leer_desde(&id, cursor, limite).await.unwrap();
+            for b in &bloques {
+                if let Some(previo) = anterior {
+                    assert!(
+                        (b.tiempo - previo - paso).abs() < 1e-9,
+                        "hueco o repetido en el stream"
+                    );
+                }
+                anterior = Some(b.tiempo);
+            }
+            cursor = hasta;
+        }
+
+        // Sin nada que entregar, el cursor no avanza en falso.
+        let (vacio, hasta_vacio) = ss.leer_desde(&id, cursor, limite).await.unwrap();
+        if vacio.is_empty() {
+            assert_eq!(hasta_vacio, cursor);
+        }
     }
 }
