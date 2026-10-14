@@ -2,12 +2,12 @@
 import { camaraInicial, conectarControles, invertir, matrizProyeccion, matrizVista, multiplicar, ojoDeCamara, rayoDesdePantalla, tocaEsfera, type EstadoCamara } from '../camara'
 import { anguloRotacion, aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, slotTextura, tipoPlaneta, NUM_TEXTURAS, TEXTURAS_POR_ID, VELOCIDAD_ROTACION, type CuerpoVisual } from '../escenario'
 import type { FuenteEstados } from '../api'
-import { interpolarBloque } from '../binario'
+import type { FotoMedicion } from '../medicion'
+import { NucleoReproduccion } from '../nucleo-reproduccion'
 import planetaWGSL from './sombreadores/planeta.wgsl?raw'
 import orbitaWGSL from './sombreadores/orbita.wgsl?raw'
 import puntosWGSL from './sombreadores/puntos.wgsl?raw'
 import { aSegmentos, crearEstela, generarEstrellas, PASO_ESTELA_SIM, RegistroEstela, type Estela } from '../estelas'
-import { avanzar, bloqueActual, crearFrontera, reanclar, ritmoParaPeriodo } from '../frontera'
 import { actualizar, aIntercalado, crearSistema, explotar, puedeExplotar } from '../particulas'
 import { detectarImpactos } from '../mecanica'
 
@@ -31,18 +31,20 @@ export interface ControlUltra {
   /** Ritmo de reproducción vigente. */
   leerRitmo: () => number
   seleccionar: (id: string | null) => void
-  /** Cambia la fuente (`limpiar=false` conserva estelas). */
+  /** Cambia la fuente (bifurcación o primera conexión; `limpiar` rige estelas). */
   fijarFuente: (f: FuenteEstados | null, limpiar?: boolean) => void
   /** Añade bloques del stream (sin resetear el reloj). */
   anexarBloques: (nuevos: Float32Array[]) => void
   /** Poda bloques con t < `mantenerDesde` (memoria acotada). */
   podar: (mantenerDesde: number) => void
-  /** Segundos simulados actuales (para el reloj de la barra). */
+  /** Segundos simulados actuales (`NaN` en `cargando`: la barra pinta '—'). */
   leerTiempo: () => number
   /** Posiciones SI actuales (para bifurcar sin saltos). `null` si no hay. */
   leerPosicionesActuales: () => number[] | null
   /** Bloque completo interpolado al instante actual (t + xyz + vxvyvz). */
   leerBloqueActual: () => Float32Array | null
+  /** Foto de rendimiento para el overlay (Fase 0: medir antes de optimizar). */
+  leerMedicion: () => FotoMedicion
   destruir: () => void
   leerSeleccion: () => string | null
 }
@@ -319,21 +321,14 @@ export async function montarUltra(
   let pausado = false
   let velocidad = 1
   let seleccionado: string | null = null
-  let angulo = 0
   let vivo = true
   let cuadros = 0
   const tituloBase = document.title
   const t0 = performance.now()
   let ultimoMs = t0
-  // Segundos SIMULADOS para la rotación propia (ver periodoRotacion en WGSL).
-  let spinSim = 0
   /** Reloj propio de la rotación, en tiempo de pared escalado (no simulado). */
   let relojRotacion = 0
-  let ultimosCentros: Float32Array = centros
   const radios = visuales.map((c) => c.radioVisual * 1.2)
-  // Fundido de empalme (~1 s): mezcla la imagen previa con la nueva fuente.
-  let fondo: Float32Array | null = null
-  let tFondo = 1
   // Cuerpo que la cámara persigue (clic lo fija, R o clic al vacío lo suelta).
   let seguido: string | null = null
 
@@ -347,7 +342,7 @@ export async function montarUltra(
     let mejor: string | null = null
     let mejorT = Infinity
     visuales.forEach((v, i) => {
-      const centro: [number, number, number] = [ultimosCentros[i * 4], ultimosCentros[i * 4 + 1], ultimosCentros[i * 4 + 2]]
+      const centro: [number, number, number] = [nucleo.centros[i * 4], nucleo.centros[i * 4 + 1], nucleo.centros[i * 4 + 2]]
       const t = tocaEsfera(rayo, centro, radios[i] ?? 1)
       if (t !== null && t < mejorT) {
         mejorT = t
@@ -379,7 +374,7 @@ export async function montarUltra(
     if (id === null) return
     const i = visuales.findIndex((v) => v.id === id)
     if (i < 0) return
-    cam.objetivo = [ultimosCentros[i * 4], ultimosCentros[i * 4 + 1], ultimosCentros[i * 4 + 2]]
+    cam.objetivo = [nucleo.centros[i * 4], nucleo.centros[i * 4 + 1], nucleo.centros[i * 4 + 2]]
     avisarSeleccion(id)
   }
   // R resetea la pose en camara.ts: aquí además se suelta el perseguido.
@@ -391,35 +386,14 @@ export async function montarUltra(
   lienzo.addEventListener('dblclick', alDoble)
   window.addEventListener('keydown', alTecla)
 
-  // Servidor: interpola entre fotogramas binarios si hay historial válido.
-  // Sin módulo ni bucle: el playback persigue la frontera del stream y se
-  // detiene en el borde hasta que llegan más datos. El ritmo se ajusta al
-  // sistema (`ritmoParaPeriodo`): con uno fijo, los planetas exteriores del
-  // Sistema Solar se movían 1e-4 grados por fotograma y parecían congelados.
-  let ritmo = ritmoParaPeriodo(periodoSim ?? NaN)
-  let escalaFuente = fuente?.escala ?? 1
-  const fro = crearFrontera(fuente && fuente.bloques.length >= 2 ? fuente.bloques : null)
-
-  // Si se monta YA con servidor, el fondo es el círculo demo (ángulo 0):
-  // el primer segundo interpola demo→física real, sin salto único.
-  if (fro.bloques) {
-    fondo = centros.slice()
-    tFondo = 0
-  }
-
-  /** Escribe en `c` los centros interpolados del instante `t` (segundos sim). */
-  function centrosServidor(c: Float32Array, t: number): void {
-    if (!fro.bloques) return
-    const b = interpolarBloque(fro.bloques, fro.bloques.length - 1, t)
-    if (!b) return
-    visuales.forEach((_v, i) => {
-      const base = 1 + i * 6
-      // Misma convención que normalizarPosiciones: [x, z, y] × escala.
-      c[i * 4] = b[base] * escalaFuente
-      c[i * 4 + 1] = b[base + 2] * escalaFuente
-      c[i * 4 + 2] = b[base + 1] * escalaFuente
-    })
-  }
+  // Núcleo común de reproducción (experimento): único dueño del reloj, la
+  // fuente, el ritmo y los centros. Sin demo falsa ni fundidos: sin fuente el
+  // estado es `cargando` y el diorama queda congelado (honesto, sin saltos).
+  // El ritmo se ajusta al sistema (`ritmoParaPeriodo`): con uno fijo, los
+  // planetas exteriores del Sistema Solar parecían congelados.
+  const nucleo = new NucleoReproduccion(n, periodoSim, fuente, centros)
+  /** Scratch reutilizado para el registro de estelas (cero allocs). */
+  const raspaPos: [number, number, number] = [0, 0, 0]
 
   function cuadro(): void {
     if (!vivo) return
@@ -435,48 +409,18 @@ export async function montarUltra(
       texProf = device.createTexture({ size: [w, h], sampleCount: 1, format: 'depth24plus', usage: TU.RENDER_ATTACHMENT })
       vistaProf = texProf.createView()
     }
-    if (!pausado) angulo += 0.002 * velocidad
-    const c = new Float32Array(centros)
-    const hayServidor = fro.bloques !== null && fro.bloques.length >= 2
-    if (hayServidor) {
-      // Persigue la frontera: avanza a ritmo fijo y espera en el borde.
-      const t = avanzar(fro, dtMs / 1000, velocidad, ritmo, pausado)
-      // `max(0, …)` porque la rotación propia no puede retroceder aunque una
-      // poda reancle el reloj por detrás de lo ya mostrado.
-      spinSim += Math.max(0, t - spinSim)
-      centrosServidor(c, t)
-    } else {
-      // Demo local sin servidor: 1440 s sim por segundo real (la tierra
-      // completa su día en ~60 s a 1x); órbitas circulares simples.
-      if (!pausado) spinSim += (dtMs / 1000) * velocidad * 1440
-      // Demo local sin servidor: rotación simple de cuerpos no centrales.
-      visuales.forEach((v, i) => {
-        if (i === 0) return
-        const p0 = posMundo.get(v.id) ?? [10, 0, 0]
-        const r = Math.hypot(p0[0], p0[2])
-        const a = angulo * (10 / r)
-        c[i * 4] = Math.cos(a) * r
-        c[i * 4 + 2] = Math.sin(a) * r
-      })
-    }
-    // Fundido de empalme: mezcla la foto previa durante ~1 s. La estela no se
-    // alimenta de aquí (reconstruye la trayectoria del servidor por su cuenta),
-    // así que el fundido no le deja rizos fantasma.
-    if (tFondo < 1 && fondo && fondo.length === c.length) {
-      tFondo = Math.min(1, tFondo + dtMs / 1000)
-      const s = tFondo * tFondo * (3 - 2 * tFondo)
-      for (let i = 0; i < c.length; i++) c[i] = fondo[i] + (c[i] - fondo[i]) * s
-      if (tFondo >= 1) fondo = null
-    }
+    const estado = nucleo.avanzarCuadro(dtMs / 1000, velocidad, pausado)
+    // Referencia reutilizada del núcleo (cero allocs): no retener.
+    const c = nucleo.centros
     device.queue.writeBuffer(bufCentros, 0, c)
-    ultimosCentros = c
+    nucleo.medidor.sumarBytes(c.byteLength)
 
     // Explosiones: proximidad entre cuerpos (radios visuales) con cooldown.
     if (!pausado) {
       const mundo: Array<[number, number, number]> = visuales.map((_v, i) => [
-        ultimosCentros[i * 4],
-        ultimosCentros[i * 4 + 1],
-        ultimosCentros[i * 4 + 2],
+        c[i * 4],
+        c[i * 4 + 1],
+        c[i * 4 + 2],
       ])
       const ahora = performance.now()
       for (const golpe of detectarImpactos(mundo, visuales.map((v) => v.radioVisual))) {
@@ -489,20 +433,15 @@ export async function montarUltra(
     }
 
     // Estelas: muestreo de paso fijo en tiempo SIM (curva real, no cuerdas).
-    // Se registra la física cruda (sin fundido) y la posición se reconstruye
-    // interpolando los bloques, que es lo que hace el propio render.
-    if (!pausado) {
-      const bl = fro.bloques
-      if (bl) {
-        visuales.forEach((_v, i) => {
-          registroEstela.registrar(estelas[i], fro.tiempo, epoca, (t) => {
-            const b = interpolarBloque(bl, bl.length - 1, t)
-            if (!b) return null
-            const o = 1 + i * 6
-            return [b[o] * escalaFuente, b[o + 2] * escalaFuente, b[o + 1] * escalaFuente]
-          })
-        })
-      }
+    // La posición la da el núcleo (mismos números que el dibujo) en un
+    // scratch reutilizado; el registro la clona al guardar.
+    if (!pausado && estado === 'vivo') {
+      const tFuente = nucleo.tiempo
+      visuales.forEach((_v, i) => {
+        registroEstela.registrar(estelas[i], tFuente, epoca, (t) =>
+          nucleo.posicionEn(t, i, raspaPos) ? raspaPos : null,
+        )
+      })
     }
     const vertsEstela: number[] = []
     visuales.forEach((v, i) => {
@@ -518,7 +457,7 @@ export async function montarUltra(
     if (seguido !== null) {
       const i = visuales.findIndex((v) => v.id === seguido)
       if (i >= 0) {
-        cam.objetivo = [ultimosCentros[i * 4], ultimosCentros[i * 4 + 1], ultimosCentros[i * 4 + 2]]
+        cam.objetivo = [c[i * 4], c[i * 4 + 1], c[i * 4 + 2]]
       } else {
         seguido = null
       }
@@ -534,7 +473,8 @@ export async function montarUltra(
     uni[19] = (performance.now() - t0) / 1000 // tiempo (nubes, pulso sol)
     uni.set(ojo, 20) // camPos
     uni[23] = seleccionado ? 1.2 : 1.0 // brillo
-    uni[24] = spinSim // segundos sim mostrados (respeta pausa)
+    const tSpin = nucleo.leerTiempo()
+    uni[24] = Number.isFinite(tSpin) ? tSpin : 0 // 0 en `cargando` (sin NaN a GPU)
     device.queue.writeBuffer(bufUni, 0, uni)
 
     // Rotación propia: reloj de PARED propio (ver `anguloRotacion`), avanzado
@@ -576,6 +516,7 @@ export async function montarUltra(
     paso.end()
     device.queue.submit([cod.finish()])
     cuadros += 1
+    nucleo.medidor.marco(performance.now() - ahora)
     // OK honesto: solo si no hubo ningún error de GPU antes.
     const aviso = document.getElementById('aviso')
     if (cuadros === 30 && aviso && !aviso.dataset.error) {
@@ -587,24 +528,11 @@ export async function montarUltra(
   return {
     alternarPausa: () => { pausado = !pausado },
     fijarVelocidad: (v: number) => { velocidad = v },
-    fijarRitmo: (r: number) => { if (r > 0 && Number.isFinite(r)) ritmo = r },
-    leerRitmo: () => ritmo,
+    fijarRitmo: (r: number) => nucleo.fijarRitmo(r),
+    leerRitmo: () => nucleo.leerRitmo(),
     seleccionar: (id: string | null) => { seleccionado = id },
     fijarFuente: (f: FuenteEstados | null, limpiar = true) => {
-      // Fundido SOLO al bifurcar o montar (limpiar=true: cambió el escenario).
-      if (limpiar) {
-        // Foto previa para el fundido de empalme (~1 s, sin saltos).
-        fondo = ultimosCentros.slice()
-        tFondo = 0
-      } else {
-        fondo = null
-        tFondo = 1
-      }
-      // COPIA, no referencia: el dueño del arreglo de principal también lo
-      // muta (poll/prune). Compartirlo duplicaba bloques y podaba dos veces,
-      // y eso dibujaba los saltos rectos.
-      reanclar(fro, f && f.bloques.length >= 2 ? [...f.bloques] : null)
-      escalaFuente = f?.escala ?? 1
+      nucleo.fijarFuente(f)
       // El muestreo en tiempo sim parte de cero en cada fuente.
       registroEstela.reiniciar()
       // Solo al bifurcar se limpia: en stream la estela es historia continua.
@@ -617,29 +545,16 @@ export async function montarUltra(
       }
     },
     leerSeleccion: () => seleccionado,
-    leerTiempo: () => spinSim,
-    leerBloqueActual: () => bloqueActual(fro),
-    anexarBloques: (nuevos: Float32Array[]) => {
-      if (!fro.bloques || nuevos.length === 0) return
-      fro.bloques.push(...nuevos)
-    },
-    podar: (mantenerDesde: number) => {
-      const b = fro.bloques
-      if (!b || b.length === 0) return
-      let cortar = 0
-      while (cortar < b.length - 2 && b[cortar][0] < mantenerDesde) cortar++
-      if (cortar > 0) b.splice(0, cortar)
-    },
+    leerTiempo: () => nucleo.leerTiempo(),
+    leerBloqueActual: () => nucleo.leerBloqueActual(),
+    leerMedicion: () => nucleo.medir(),
+    anexarBloques: (nuevos: Float32Array[]) => { nucleo.anexarBloques(nuevos) },
+    podar: (mantenerDesde: number) => { nucleo.podar(mantenerDesde) },
     leerPosicionesActuales: () => {
-      // Deshace el mapeo mundo [x*e, z*e, y*e] → SI. En demo la escala es
-      // la del escenario; con servidor, la de la fuente.
-      const e = fro.bloques ? escalaFuente : escalaMundo(visuales)
-      if (!(e > 0)) return null
-      const salida: number[] = []
-      visuales.forEach((_v, i) => {
-        salida.push(ultimosCentros[i * 4] / e, ultimosCentros[i * 4 + 2] / e, ultimosCentros[i * 4 + 1] / e)
-      })
-      return salida
+      // Deshace el mapeo mundo [x*e, z*e, y*e] → SI. En `cargando` la escala
+      // es la del escenario; con fuente, la de la sesión.
+      const salida = nucleo.leerPosicionesSI(escalaMundo(visuales))
+      return salida ? [...salida] : null
     },
     destruir: () => {
       vivo = false

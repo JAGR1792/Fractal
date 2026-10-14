@@ -16,6 +16,7 @@
       #vel { width: 90px; accent-color: #7DE2FC; }
       #tiempo { color: #7DE2FC; font-variant-numeric: tabular-nums; min-width: 86px; }
       #perfil { color: #999; font-size: 12px; }
+      #medicion { color: #8fd08f; font-size: 11px; font-variant-numeric: tabular-nums; }
       #escala { color: #8a7d4b; font-size: 11px; border: 1px dashed #8a7d4b; border-radius: 6px; padding: 1px 6px; }
       #sandbox {
         position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 10;
@@ -64,6 +65,7 @@
         <span id="perfil"></span>
         <span id="ritmo" title="Segundos simulados por segundo real a velocidad 1x. Se ajusta al escenario: una vuelta del cuerpo principal cada 8 s de reloj.">—</span>
         <span id="escala" title="Los radios se exageran con escala logarítmica para que se vean; las posiciones y la física son SI reales">tamaños exagerados</span>
+        <span id="medicion" title="Medición del render (experimento): estado, ms por cuadro, p95, parones, interpolaciones y bytes subidos">—</span>
         <button id="btnSandbox" title="Mostrar/ocultar panel sandbox">Sandbox</button>
       </div>
       <div id="sandbox" aria-label="Panel sandbox: edita parámetros y lanza simulaciones"></div>

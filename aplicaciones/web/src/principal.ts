@@ -11,6 +11,7 @@ import {
 import { montarSandbox, aplicarEdicion, pintarTelemetria, type EdicionSandbox } from './sandbox'
 import { elementosDeCuerpo, formatearDistancia } from './mecanica'
 import { periodoDelSistema, ritmoParaPeriodo, SEGUNDOS_POR_VUELTA } from './frontera'
+import { textoMedicion, type FotoMedicion } from './medicion'
 
 /**
  * Escenarios disponibles (id → etiqueta). El id viaja en `?escenario=`;
@@ -54,6 +55,8 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     leerPosicionesActuales?: () => number[] | null
     fijarRejilla?: (visible: boolean) => void
     leerRejilla?: () => boolean
+    /** Foto de rendimiento para el overlay (experimento: medir y comparar). */
+    leerMedicion?: () => FotoMedicion
     destruir?: () => void
   }
 
@@ -90,7 +93,7 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     control = await montarUltra(lienzo, urlEscenario, null, periodoSim)
   } else {
     const { montarLite } = await import('./lite/webgl2_minimo')
-    control = montarLite(lienzo, urlEscenario, null, periodoSim)
+    control = await montarLite(lienzo, urlEscenario, null, periodoSim)
   }
 
   // Selector de escenario: cambia `?escenario=` y recarga.
@@ -281,10 +284,17 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   }
 
   // Sondeo: reloj + telemetría + cursor de la sesión (polling ~1 s).
+  // Aquí también se refresca el overlay de medición (Fase 0 del experimento).
+  const etiquetaMedicion = document.getElementById('medicion')
   setInterval(async () => {
     if (reloj) {
       const t = control.leerTiempo?.()
-      reloj.textContent = t === undefined ? '—' : `T+ ${formatearTiempo(t)}`
+      reloj.textContent = t === undefined || !Number.isFinite(t) ? '—' : `T+ ${formatearTiempo(t)}`
+    }
+    const foto = control.leerMedicion?.()
+    if (foto) {
+      if (etiquetaMedicion) etiquetaMedicion.textContent = textoMedicion(foto)
+      ;(window as unknown as { __fractalMedicion?: FotoMedicion }).__fractalMedicion = foto
     }
     if (cajaSandbox) {
       const selId = (document.getElementById('sbCuerpo') as HTMLSelectElement | null)?.value ?? ''
