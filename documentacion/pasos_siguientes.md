@@ -2,6 +2,16 @@
 
 Mapa vivo del proyecto: dónde vamos y qué falta. Actualizar en cada etapa.
 
+## Experimento de render nuevo (2026-10-14, rama `experimento_nuevo_render`)
+
+Los planetas se congelan y ningún parche lo arregla: ver ADR-0008. Hecho en
+la rama: medidor con overlay (`medicion.ts`, `#medicion`,
+`window.__fractalMedicion`), núcleo común de reproducción
+(`nucleo-reproduccion.ts`, ULTRA/LITE solo dibujan), estado `cargando`
+honesto (fuera demo falsa y fundidos) y estelas en anillo O(1) (libro
+§3.3.7). Siguiente: backend LITE con motor para el test A/B (falta elegir
+Three.js o Babylon).
+
 ## Estado por etapa (2026-10-09)
 
 | Etapa | Estado |
