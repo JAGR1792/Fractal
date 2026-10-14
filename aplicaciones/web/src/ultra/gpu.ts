@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { camaraInicial, conectarControles, invertir, matrizProyeccion, matrizVista, multiplicar, ojoDeCamara, rayoDesdePantalla, tocaEsfera, type EstadoCamara } from '../camara'
-import { anguloRotacion, aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, slotTextura, tipoPlaneta, NUM_TEXTURAS, TEXTURAS_POR_ID, VELOCIDAD_ROTACION, type CuerpoVisual } from '../escenario'
+import { anguloRotacion, aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, slotTextura, tipoPlaneta, NUM_TEXTURAS, TEXTURAS_POR_ID, VELOCIDAD_ROTACION, type CuerpoVisual, type ModoEscala } from '../escenario'
 import type { FuenteEstados } from '../api'
 import type { FotoMedicion } from '../medicion'
 import { NucleoReproduccion } from '../nucleo-reproduccion'
@@ -139,6 +139,7 @@ export async function montarUltra(
   urlEscenario = '/datos/dos_cuerpos.json',
   fuente: FuenteEstados | null = null,
   periodoSim: number | null = null,
+  modo: ModoEscala = 'exagerado',
 ): Promise<ControlUltra> {
   const nav: any = navigator as any
   if (!nav.gpu) throw new Error('sin WebGPU')
@@ -163,7 +164,7 @@ export async function montarUltra(
 
   const escenario = await cargarEscenario(urlEscenario).catch(() => null)
   const visuales: CuerpoVisual[] = escenario
-    ? aVisual(escenario)
+    ? aVisual(escenario, modo)
     : [
         { id: 'sol', nombre: 'Sol', masa: 1.989e30, radio: 6.957e8, posicion: [0, 0, 0], velocidad: [0, 0, 0], radioVisual: 5, color: [1, 0.85, 0.2] },
         { id: 'tierra', nombre: 'Tierra', masa: 5.972e24, radio: 6.371e6, posicion: [1.496e11, 0, 0], velocidad: [0, 29780, 0], radioVisual: 1.6, color: [0.2, 0.45, 0.95] },

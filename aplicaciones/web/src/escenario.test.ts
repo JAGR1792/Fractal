@@ -16,6 +16,7 @@ import {
   ROTACION_POR_ID,
   slotTextura,
   TEXTURAS_POR_ID,
+  textoEscala,
   tipoPlaneta,
   urlTextura,
   VELOCIDAD_ROTACION,
@@ -313,5 +314,34 @@ describe('rotación propia', () => {  it('cada cuerpo tiene su período real, no
     }
     // Júpiter (9,9 h) gira más rápido que la Tierra (23,9 h), como en la realidad.
     expect(porFotograma(1e7, 'jupiter')).toBeGreaterThan(porFotograma(1e7, 'tierra'))
+  })
+})
+
+describe('escala real (ADR-0009)', () => {
+  const dos: Escenario = {
+    id: 'x', nombre: 'X', descripcion: '', cuerpos: [
+      { id: 'tierra', nombre: 'Tierra', masa: 5.972e24, radio: 6.371e6, posicion: [-4668000, 0, 0], velocidad: [0, 0, 0] },
+      { id: 'luna', nombre: 'Luna', masa: 7.342e22, radio: 1.737e6, posicion: [379700000, 0, 0], velocidad: [0, 0, 0] },
+    ],
+  }
+
+  it('usa un factor comun: proporciones verdaderas', () => {
+    const vis = aVisual(dos, 'real')
+    const fTierra = vis[0].radioVisual / 6.371e6
+    const fLuna = vis[1].radioVisual / 1.737e6
+    expect(fTierra).toBeCloseTo(fLuna, 9)
+    // El factor es el mismo de las posiciones (40 / radio orbital maximo).
+    expect(fTierra).toBeCloseTo(40 / 379700000, 9)
+    // La Luna queda lejos y pequena de verdad (sin suelos que la inflen).
+    expect(vis[1].radioVisual).toBeLessThan(1)
+  })
+
+  it('por defecto sigue exagerado', () => {
+    expect(aVisual(dos)[0].radioVisual).toBeGreaterThan(aVisual(dos, 'real')[0].radioVisual)
+  })
+
+  it('etiqueta honesta por modo', () => {
+    expect(textoEscala('exagerado', dos.cuerpos)).toBe('tamaños exagerados')
+    expect(textoEscala('real', dos.cuerpos)).toContain('9.5 mil km')
   })
 })

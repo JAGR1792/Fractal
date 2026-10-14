@@ -202,6 +202,14 @@ export const VIEWPORT_REFERENCIA = 900
 export const MIN_FRACCION_PANTALLA = 0.0018
 
 /**
+ * Modo de escala visual (ADR-0009).
+ * - `exagerado` (defecto): radios relativos legibles, física SI intacta.
+ * - `real`: posiciones Y radios con el MISMO factor (proporciones verdaderas,
+ *   sin topes ni suelos: lo diminuto queda diminuto, honesto).
+ */
+export type ModoEscala = 'exagerado' | 'real'
+
+/**
  * Convierte radios físicos (m) a radios visuales (mundo).
  *
  * Los radios se escalan **relativos al sistema**, no en absoluto. Ese era el
@@ -217,9 +225,18 @@ export const MIN_FRACCION_PANTALLA = 0.0018
  * 2. Compresión logarítmica del radio físico, con tope: nadie tapa a su vecino.
  * 3. Suelo en píxeles: nadie queda invisible.
  */
-export function aVisual(escenario: Escenario): CuerpoVisual[] {
+export function aVisual(escenario: Escenario, modo: ModoEscala = 'exagerado'): CuerpoVisual[] {
   const cuerpos = escenario.cuerpos
   const escala = escalaMundoDe(cuerpos)
+
+  if (modo === 'real') {
+    // Proporciones verdaderas: el factor es el mismo de las posiciones, sin
+    // logaritmos, topes ni suelos. La Luna queda lejos y pequeña de verdad.
+    return cuerpos.map((c, i) => {
+      const color = COLORES_POR_ID[c.id.toLowerCase()] ?? COLORES_FALLBACK[i % COLORES_FALLBACK.length]
+      return { ...c, radioVisual: Math.max(c.radio, 1) * escala, color }
+    })
+  }
 
   // Separación más corta del sistema: fija el radio de referencia.
   let separacionMinima = Infinity
@@ -327,6 +344,31 @@ function escalaMundoDe(cuerpos: Array<{ posicion: [number, number, number] }>): 
     if (r > maxR) maxR = r
   }
   return 40 / maxR
+}
+
+/**
+ * Metros por unidad mundo (el radio orbital máximo ocupa 40 unidades).
+ * Para la etiqueta honesta del modo real (`1 ud = …`).
+ */
+export function metrosPorUnidad(cuerpos: Array<{ posicion: [number, number, number] }>): number {
+  let maxR = 1
+  for (const c of cuerpos) {
+    const r = Math.hypot(c.posicion[0], c.posicion[1], c.posicion[2])
+    if (r > maxR) maxR = r
+  }
+  return maxR / 40
+}
+
+/**
+ * Texto de escala para la barra: en modo real dice el factor verdadero,
+ * si no el aviso de siempre (los radios se exageran, la física no).
+ */
+export function textoEscala(modo: ModoEscala, cuerpos: Array<{ posicion: [number, number, number] }>): string {
+  if (modo !== 'real') return 'tamaños exagerados'
+  const km = metrosPorUnidad(cuerpos) / 1000
+  if (km >= 1e6) return `escala real · 1 ud = ${(km / 1e6).toFixed(1)} M km`
+  if (km >= 1e3) return `escala real · 1 ud = ${(km / 1e3).toFixed(1)} mil km`
+  return `escala real · 1 ud = ${km.toFixed(0)} km`
 }
 
 /** Normaliza posiciones del escenario a mundo (-50..50) para la cámara inicial. */

@@ -3,7 +3,7 @@
  * Sin motores. Un draw por cuerpo (N pequeño en LITE).
  */
 
-import { anguloRotacion, aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, slotTextura, tipoPlaneta, NUM_TEXTURAS, TEXTURAS_POR_ID, VELOCIDAD_ROTACION } from '../escenario'
+import { anguloRotacion, aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, slotTextura, tipoPlaneta, NUM_TEXTURAS, TEXTURAS_POR_ID, VELOCIDAD_ROTACION, type ModoEscala } from '../escenario'
 import { camaraInicial, conectarControles, matrizProyeccion, matrizVista, multiplicar, type EstadoCamara } from '../camara'
 import { aSegmentos, crearEstela, generarEstrellas, limpiarEstela, PASO_ESTELA_SIM, RaspaFlotantes, RegistroEstela, type Estela } from '../estelas'
 import { crearSistema, actualizar as actualizarChispas, aIntercalado as chispasIntercaladas, explotar as explotarChispas, puedeExplotar as puedeExplotarChispas } from '../particulas'
@@ -193,6 +193,7 @@ export async function montarLite(
   urlEscenario = '/datos/dos_cuerpos.json',
   fuente: FuenteEstados | null = null,
   periodoSim: number | null = null,
+  modo: ModoEscala = 'exagerado',
 ): Promise<ControlLite> {
   const glRaw = lienzo.getContext('webgl2')
   if (!glRaw) throw new Error('sin WebGL2')
@@ -300,7 +301,7 @@ export async function montarLite(
   // queda fijo y no hay flash de demo ni mutaciones a mitad del vuelo.
   try {
     const esc = await cargarEscenario(urlEscenario)
-    visuales = aVisual(esc)
+    visuales = aVisual(esc, modo)
   } catch { /* sin escenario: demo interna */ }
   const posMundo = normalizarPosiciones(visuales)
   if (visuales.length > 3) cam.distancia = 120

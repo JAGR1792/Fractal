@@ -17,6 +17,8 @@
       #tiempo { color: #7DE2FC; font-variant-numeric: tabular-nums; min-width: 86px; }
       #perfil { color: #999; font-size: 12px; }
       #medicion { color: #8fd08f; font-size: 11px; font-variant-numeric: tabular-nums; }
+      #lblReal { display: flex; gap: 6px; align-items: center; cursor: pointer; user-select: none; }
+      #chkReal { accent-color: #ffd97d; width: 15px; height: 15px; cursor: pointer; }
       #escala { color: #8a7d4b; font-size: 11px; border: 1px dashed #8a7d4b; border-radius: 6px; padding: 1px 6px; }
       #sandbox {
         position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 10;
@@ -65,6 +67,7 @@
         <span id="perfil"></span>
         <span id="ritmo" title="Segundos simulados por segundo real a velocidad 1x. Se ajusta al escenario: una vuelta del cuerpo principal cada 8 s de reloj.">—</span>
         <span id="escala" title="Los radios se exageran con escala logarítmica para que se vean; las posiciones y la física son SI reales">tamaños exagerados</span>
+        <label id="lblReal" title="Escala real: posiciones y radios con el mismo factor (proporciones verdaderas). Recarga la vista."><input id="chkReal" type="checkbox" /> Real</label>
         <span id="medicion" title="Medición del render (experimento): estado, ms por cuadro, p95, parones, interpolaciones y bytes subidos">—</span>
         <button id="btnSandbox" title="Mostrar/ocultar panel sandbox">Sandbox</button>
       </div>
@@ -73,6 +76,13 @@
       <div id="aviso" role="status"></div>
       <table id="tabla" aria-label="Datos tabulares de cuerpos (alternativa accesible)"></table>
     </div>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/vendor/three.module.js"
+        }
+      }
+    </script>
     <script type="module" src="/src/principal.ts"></script>
   </body>
 </html>

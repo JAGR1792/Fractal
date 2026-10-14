@@ -1,5 +1,5 @@
 import { elegirPerfil, type PerfilRender } from './detector'
-import { cargarEscenario, aVisual, escalaMundo, type CuerpoVisual, type Escenario } from './escenario'
+import { cargarEscenario, aVisual, escalaMundo, textoEscala, type CuerpoVisual, type Escenario, type ModoEscala } from './escenario'
 import {
   actualizarSesion,
   baseApi,
@@ -63,12 +63,14 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
 
   // Escenario local una sola vez (config + tabla + base del sandbox).
   const escenarioId = escenarioPedido()
+  // Escala real opcional (ADR-0009): proporciones verdaderas con `?real=1`.
+  const modoReal: ModoEscala = new URLSearchParams(window.location.search).get('real') === '1' ? 'real' : 'exagerado'
   const urlEscenario = `/datos/${escenarioId}.json`
   let esc: Escenario | null = null
   let vis: CuerpoVisual[] = []
   try {
     esc = await cargarEscenario(urlEscenario)
-    vis = aVisual(esc)
+    vis = aVisual(esc, modoReal)
   } catch {
     /* sin escenario: el render usa su demo interna */
   }
@@ -91,10 +93,14 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
 
   if (perfil === 'ultra') {
     const { montarUltra } = await import('./ultra/gpu')
-    control = await montarUltra(lienzo, urlEscenario, null, periodoSim)
+    control = await montarUltra(lienzo, urlEscenario, null, periodoSim, modoReal)
+  } else if (perfil === 'motor') {
+    // Experimento A/B (ADR-0009): mismo núcleo, dibujo con motor.
+    const { montarMotor } = await import('./lite/three')
+    control = await montarMotor(lienzo, urlEscenario, null, periodoSim, modoReal)
   } else {
     const { montarLite } = await import('./lite/webgl2_minimo')
-    control = await montarLite(lienzo, urlEscenario, null, periodoSim)
+    control = await montarLite(lienzo, urlEscenario, null, periodoSim, modoReal)
   }
 
   // Selector de escenario: cambia `?escenario=` y recarga.
@@ -107,6 +113,20 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
       window.location.search = params.toString()
     })
   }
+
+  // Escala real: checkbox que cambia `?real=` y recarga (reescalar en
+  // caliente sería teletransportar: mismo patrón que el escenario).
+  const chkReal = document.getElementById('chkReal') as HTMLInputElement | null
+  if (chkReal) {
+    chkReal.checked = modoReal === 'real'
+    chkReal.addEventListener('change', () => {
+      const params = new URLSearchParams(window.location.search)
+      params.set('real', chkReal.checked ? '1' : '0')
+      window.location.search = params.toString()
+    })
+  }
+  const etEscala = document.getElementById('escala')
+  if (etEscala) etEscala.textContent = vis.length > 0 ? textoEscala(modoReal, vis) : 'tamaños exagerados'
 
   // Ritmo efectivo en la barra: sin esto no hay forma de saber si lo que se ve
   // "pausado" es el sistema (mal ritmo) o el reloj.
@@ -374,7 +394,7 @@ function formatearTiempo(s: number): string {
 document.addEventListener('DOMContentLoaded', () => {
   const params = new URLSearchParams(window.location.search)
   const pedido = params.get('perfil')
-  const forzar = pedido === 'ultra' || pedido === 'lite' ? pedido : undefined
+  const forzar = pedido === 'ultra' || pedido === 'lite' || pedido === 'motor' ? pedido : undefined
   arrancar(forzar).catch((e) => {
     console.error('[fractal] fallo arranque:', e)
     const aviso = document.getElementById('aviso')
