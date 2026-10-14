@@ -12,6 +12,15 @@ honesto (fuera demo falsa y fundidos) y estelas en anillo O(1) (libro
 §3.3.7). Siguiente: backend LITE con motor para el test A/B (falta elegir
 Three.js o Babylon).
 
+## Flujo anti-parones (2026-10-14, rama `experimento_nuevo_render`)
+
+A velocidad alta el consumo (246 bloques/s a 10x) superaba el caudal fijo
+del poll (200/s): inanición matemática, como YouTube. Arreglo: límite
+adaptativo a velocidad y ritmo en `principal.ts`, flag `hambre` en el núcleo
+con "buffering…" en el overlay, y reloj que nunca salta (verificado con
+tests). Pausar sigue acumulando buffer: al despausar va fluido, igual que
+pausar YouTube.
+
 ## Estado por etapa (2026-10-09)
 
 | Etapa | Estado |

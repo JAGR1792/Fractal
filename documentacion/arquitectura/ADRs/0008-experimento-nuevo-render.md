@@ -43,6 +43,14 @@ Rama `experimento_nuevo_render` con tres cambios ya aplicados:
 
 Pendiente (siguiente paso del experimento):
 
+- **Flujo adaptativo (hecho):** el poll pide límite según velocidad y ritmo
+  (cubre ~2.5 s de reproducción; fijo en 200, a 10x el consumo de 246
+  bloques/s superaba el caudal por matemática). El núcleo marca `hambre`
+  cuando el borde frena la demanda y el overlay dice "buffering…". El reloj
+  avanza como mucho lo pedido por cuadro: verificado que no hay saltos de
+  puesta al día, solo espera en el borde (el planeo resultó innecesario y se
+  quitó antes de fusionar nada: menos mecanismos, no más).
+
 - **Backend LITE con motor** (Three.js o Babylon, a decidir) detrás de la
   misma interfaz `Control`, alimentado por el mismo núcleo, para el test A/B:
   si el motor elimina los parones con el mismo feed, el problema era nuestro

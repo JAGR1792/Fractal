@@ -15,7 +15,7 @@
  * - El reloj nunca retrocede (`max`, como ya hacía ULTRA; LITE retrocedía).
  * - Todo lo medible pasa por el `Medidor` (Fase 0: medir antes de optimizar).
  */
-import { avanzar, bloqueActual, crearFrontera, reanclar, ritmoParaPeriodo, type Frontera } from './frontera'
+import { avanzar, bloqueActual, crearFrontera, reanclar, ritmoParaPeriodo, techoDe, type Frontera } from './frontera'
 import { interpolarBloque } from './binario'
 import type { FuenteEstados } from './api'
 import { Medidor, type FotoMedicion } from './medicion'
@@ -87,7 +87,9 @@ export class NucleoReproduccion {
     this.escala = f?.escala ?? 1
     if (this.fro.bloques) {
       this.escribirCentros(this.fro.tiempo)
-      this.mostrado = this.fro.tiempo
+      // Monótono también al bifurcar: la sesión nueva arranca en su t≈0 pero
+      // el reloj mostrado no retrocede (igual que antes con `spinSim`).
+      if (this.fro.tiempo > this.mostrado) this.mostrado = this.fro.tiempo
     }
     this.medidor.estado = this.estado
   }
@@ -118,14 +120,30 @@ export class NucleoReproduccion {
    * Avanza un cuadro: persigue la frontera a ritmo fijo y espera en el borde.
    * Escribe `this.centros`. En `cargando` (o pausado) no toca nada: el
    * diorama queda congelado, sin círculos falsos que luego saltarían.
+   *
+   * El avance por cuadro nunca supera lo pedido (`dt·velocidad·ritmo`): no
+   * hay saltos de puesta al día, solo espera en el borde. Por eso el parón
+   * de alta velocidad es inanición pura (como YouTube), no pico de cálculo.
+   * Si pedimos avance y llega menos de la mitad porque el borde nos frenó,
+   * se marca `hambre` y el overlay lo dice.
    */
   avanzarCuadro(dtParedSeg: number, velocidad: number, pausado: boolean): EstadoFuente {
-    if (this.estado !== 'vivo') return 'cargando'
+    if (this.estado !== 'vivo') {
+      this.medidor.hambre = false
+      return 'cargando'
+    }
+    const pedido = dtParedSeg * velocidad * this.ritmo
+    const previo = this.fro.tiempo
     const t = avanzar(this.fro, dtParedSeg, velocidad, this.ritmo, pausado)
     // Monótono aunque una poda reancle por detrás: retroceder el reloj es
-    // teletransportar los cuerpos (LITE lo hacía; aquí no).
+    // teletransportar los cuerpos.
     if (t > this.mostrado) this.mostrado = t
     this.escribirCentros(t)
+    // Hambre: hay demanda real (no pausa, velocidad > 0) pero el borde nos
+    // dejó con menos de la mitad de lo pedido.
+    const techo = techoDe(this.fro)
+    this.medidor.hambre =
+      !pausado && pedido > 0 && techo > -Infinity && t - previo < pedido * 0.5 && t >= techo
     return 'vivo'
   }
 

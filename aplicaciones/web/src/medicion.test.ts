@@ -36,6 +36,17 @@ describe('medidor de rendimiento', () => {
     expect(m.foto().interpTotal).toBe(40)
   })
 
+  it('marca hambre y el texto avisa buffering', () => {
+    const m = new Medidor()
+    m.estado = 'vivo'
+    expect(m.foto().hambre).toBe(false)
+    m.hambre = true
+    m.marco(33)
+    const f = m.foto()
+    expect(f.hambre).toBe(true)
+    expect(textoMedicion(f)).toContain('buffering')
+  })
+
   it('acumula anexados, podas y bytes, y el texto es de una línea', () => {
     const m = new Medidor()
     m.estado = 'vivo'

@@ -34,6 +34,8 @@ export interface FotoMedicion {
   bytesSubidos: number
   /** Lo fija el núcleo: 'cargando' | 'vivo'. */
   estado: string
+  /** Lo fija el núcleo: `true` si el reloj pide más de lo que hay (como YouTube). */
+  hambre: boolean
 }
 
 function percentil(ordenados: number[], q: number): number {
@@ -55,6 +57,7 @@ export class Medidor {
   private bytesSubidos = 0
   private ultimoMs = 0
   estado = 'cargando'
+  hambre = false
 
   /** Registra el trabajo en ms de un cuadro (llamar una vez por cuadro). */
   marco(dtMs: number): void {
@@ -106,6 +109,7 @@ export class Medidor {
       podas: this.podas,
       bytesSubidos: this.bytesSubidos,
       estado: this.estado,
+      hambre: this.hambre,
     }
   }
 }
@@ -113,5 +117,6 @@ export class Medidor {
 /** Una línea para el overlay de la barra (`#medicion`). */
 export function textoMedicion(f: FotoMedicion): string {
   const kb = f.bytesSubidos > 0 ? ` · ↑${(f.bytesSubidos / 1024).toFixed(0)}KB` : ''
-  return `${f.estado} · ${f.msUltimo.toFixed(1)}ms (p95 ${f.msP95.toFixed(1)}) · parones ${f.parones} · interp/f ${f.interpUltimoCuadro}${kb}`
+  const espera = f.hambre ? ' · buffering…' : ''
+  return `${f.estado}${espera} · ${f.msUltimo.toFixed(1)}ms (p95 ${f.msP95.toFixed(1)}) · parones ${f.parones} · interp/f ${f.interpUltimoCuadro}${kb}`
 }

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { NucleoReproduccion } from './nucleo-reproduccion'
+import { aSegmentos, crearEstela, RegistroEstela, PASO_ESTELA_SIM } from './estelas'
+import { textoMedicion } from './medicion'
 
 type S6 = [number, number, number, number, number, number]
 
@@ -94,5 +96,78 @@ describe('núcleo de reproducción', () => {
     expect(si![3]).toBeCloseTo(40, 6)
     expect(si![4]).toBeCloseTo(0, 9)
     expect(si![5]).toBeCloseTo(0, 9)
+  })
+})
+
+describe('núcleo: planeo y hambre (streaming como YouTube)', () => {
+  /** Fuente larga: 3001 bloques cada 10 s, un cuerpo quieto. */
+  function fuenteLarga(): Float32Array[] {
+    const salida: Float32Array[] = []
+    for (let k = 0; k <= 3000; k++) salida.push(bloque(k * 10, DOS(0)))
+    return salida
+  }
+
+  it('el reloj avanza justo lo pedido, nunca salta al techo lejano', () => {
+    const n = new NucleoReproduccion(2, 800, { bloques: fuenteLarga(), escala: 1, tCalculoMs: 0 })
+    // Pedido: 1 s × 1 × 100 = 100 sim-s; el techo está a 29980 y da igual:
+    // el avance por cuadro nunca supera lo pedido (ritmo 800/8 = 100).
+    // Por eso el parón de alta velocidad es espera en el borde, no pico.
+    n.avanzarCuadro(1, 1, false)
+    expect(n.leerTiempo()).toBeCloseTo(100, 9)
+    n.avanzarCuadro(1, 1, false)
+    expect(n.leerTiempo()).toBeCloseTo(200, 9)
+    // Avanzando a pleno ritmo no hay hambre.
+    expect(n.medir().hambre).toBe(false)
+  })
+
+  it('al bifurcar el reloj mostrado no retrocede', () => {
+    const n = new NucleoReproduccion(2, 800, { bloques: fuenteLarga(), escala: 1, tCalculoMs: 0 })
+    n.avanzarCuadro(10, 1, false)
+    expect(n.leerTiempo()).toBeCloseTo(1000, 9)
+    // Sesión nueva que arranca en su t≈0: el mostrado se queda (no rewind).
+    n.fijarFuente({ bloques: [bloque(0, DOS(0)), bloque(10, DOS(10))], escala: 1, tCalculoMs: 0 })
+    expect(n.leerTiempo()).toBeCloseTo(1000, 9)
+  })
+
+  it('clavado en el borde con demanda marca hambre (buffering)', () => {
+    const bloques = [bloque(0, DOS(0)), bloque(10, DOS(10)), bloque(20, DOS(20))]
+    const n = new NucleoReproduccion(2, 800, { bloques, escala: 1, tCalculoMs: 0 })
+    // Techo = bloques[0] = 0: el reloj pide 800 y no llega nada.
+    n.avanzarCuadro(1, 1, false)
+    const f = n.medir()
+    expect(f.hambre).toBe(true)
+    expect(textoMedicion(f)).toContain('buffering')
+    // Pausado no es hambre: no hay demanda.
+    n.avanzarCuadro(1, 1, true)
+    expect(n.medir().hambre).toBe(false)
+  })
+})
+
+describe('núcleo + estelas: el trazo se dibuja con fuente viva', () => {
+  it('vivo genera segmentos; cargando no genera nada', () => {
+    // Un cuerpo quieto, bloques cada 12000 s (como el servidor por defecto).
+    const bloques: Float32Array[] = []
+    for (let k = 0; k <= 200; k++) {
+      bloques.push(bloque(k * 12000, [[1e11, 0, 0, 0, 0, 0]]))
+    }
+    const n = new NucleoReproduccion(1, 2.36e6, { bloques, escala: 1, tCalculoMs: 0 })
+    const est = crearEstela(600)
+    const reg = new RegistroEstela(PASO_ESTELA_SIM, 600)
+    const raspa: [number, number, number] = [0, 0, 0]
+    // 40 cuadros como los backends: reloj + registro con el scratch del núcleo.
+    for (let f = 0; f < 40; f++) {
+      n.avanzarCuadro(0.5, 1, false)
+      reg.registrar(est, n.tiempo, 0, (t) => (n.posicionEn(t, 0, raspa) ? raspa : null))
+    }
+    const scratch: number[] = []
+    const segs = aSegmentos(est, [1, 1, 1], PASO_ESTELA_SIM, scratch)
+    expect(segs.length).toBeGreaterThan(0)
+    expect(segs.length % 14).toBe(0)
+
+    // Sin fuente no hay reloj que muestrear: cero puntos, cero segmentos.
+    const quieto = new NucleoReproduccion(1, 2.36e6, null)
+    expect(quieto.estado).toBe('cargando')
+    const est2 = crearEstela(600)
+    expect(aSegmentos(est2, [1, 1, 1], PASO_ESTELA_SIM)).toHaveLength(0)
   })
 })

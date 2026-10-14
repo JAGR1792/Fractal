@@ -3,6 +3,7 @@ import { cargarEscenario, aVisual, escalaMundo, type CuerpoVisual, type Escenari
 import {
   actualizarSesion,
   baseApi,
+  cadaNPara,
   crearSesion,
   leerSesion,
   visualesDesdeBloque,
@@ -128,7 +129,14 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
     if (btn) btn.textContent = btn.textContent === 'Pausar' ? 'Reanudar' : 'Pausar'
   })
   const vel = document.getElementById('vel') as HTMLInputElement | null
-  vel?.addEventListener('input', () => control.fijarVelocidad(Number(vel.value)))
+  // La velocidad manda en el consumo: a 10x se comen ~10 veces más bloques
+  // por segundo, así que el poll pide en proporción (como YouTube sube el
+  // buffer con la calidad). Sin esto, ir rápido es inanición garantizada.
+  let velocidadActual = 1
+  vel?.addEventListener('input', () => {
+    velocidadActual = Number(vel.value)
+    control.fijarVelocidad(velocidadActual)
+  })
   // Rejilla de gravedad: checkbox de la barra, visible por defecto.
   const chkRejilla = document.getElementById('chkRejilla') as HTMLInputElement | null
   if (chkRejilla) {
@@ -328,7 +336,14 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
       // sesión y se descarta (no contamina el buffer ni el cursor).
       const idAhora = sesionId
       if (!idAhora) return
-      const resp = await leerSesion(baseApiUrl, idAhora, hasta, 200)
+      // Límite adaptativo: cubrir ~2.5 s de reproducción al ritmo y velocidad
+      // vigentes (cada bloque dura dt×cada_n segundos sim). Fijo en 200, a 10x
+      // el consumo (246 bloques/s) superaba el caudal (200/s) por matemática.
+      const ritmo = control.leerRitmo?.() ?? 0
+      const tramo = Math.max(ultimoEnviado.dt, 1) * cadaNPara(ultimoEnviado.dt)
+      const crudo = (velocidadActual * ritmo * 2.5) / Math.max(tramo, 1)
+      const limite = Number.isFinite(crudo) ? Math.min(1500, Math.max(200, Math.ceil(crudo))) : 200
+      const resp = await leerSesion(baseApiUrl, idAhora, hasta, limite)
       if (!resp || idAhora !== sesionId) return
       if (resp.bloques.length > 0) {
         for (const b of resp.bloques) buf.push(b)
