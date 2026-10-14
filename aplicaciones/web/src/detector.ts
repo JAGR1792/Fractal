@@ -2,9 +2,10 @@
  * Detector de capacidad GPU.
  *
  * ULTRA = WebGPU disponible. LITE = fallback WebGL2.
+ * MOTOR = experimento Three.js tras `?perfil=motor` (ADR-0009).
  * En móvil se prefiere LITE aunque haya WebGPU (batería/temperatura).
  */
-export type PerfilRender = 'ultra' | 'lite'
+export type PerfilRender = 'ultra' | 'lite' | 'motor'
 
 export async function tieneWebGPU(): Promise<boolean> {
   const nav = navigator as Navigator & { gpu?: { requestAdapter: () => Promise<unknown> } }
