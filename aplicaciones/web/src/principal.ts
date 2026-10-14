@@ -363,7 +363,12 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
       const tramo = Math.max(ultimoEnviado.dt, 1) * cadaNPara(ultimoEnviado.dt)
       const crudo = (velocidadActual * ritmo * 2.5) / Math.max(tramo, 1)
       const limite = Number.isFinite(crudo) ? Math.min(1500, Math.max(200, Math.ceil(crudo))) : 200
+      // Latencia del productor: si el servidor tarda (integración en debug),
+      // aquí se ve. Es el número que decide si el parón es inanición o dibujo.
+      const tPoll0 = performance.now()
       const resp = await leerSesion(baseApiUrl, idAhora, hasta, limite)
+      const pollMs = Math.round(performance.now() - tPoll0)
+      ;(window as unknown as { __fractalPollMs?: number }).__fractalPollMs = pollMs
       if (!resp || idAhora !== sesionId) return
       if (resp.bloques.length > 0) {
         for (const b of resp.bloques) buf.push(b)
@@ -375,6 +380,13 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
         const corte = buf[buf.length - 2000][0]
         buf.splice(0, buf.length - 2000)
         control.podar?.(corte)
+      }
+      // Diagnóstico decisivo: profundidad del colchón + latencia del productor.
+      // Colchón que baja a <200 con `buffering…` = el servidor no da abasto.
+      // Colchón alto con parones = el dibujo se atraganta (ver p95/interp).
+      if (etiquetaMedicion) {
+        const foto2 = control.leerMedicion?.()
+        if (foto2) etiquetaMedicion.textContent = `${textoMedicion(foto2)} · buf ${buf.length} · poll ${pollMs}ms`
       }
     } finally {
       sondeando = false
