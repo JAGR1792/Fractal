@@ -7,7 +7,7 @@ import { NucleoReproduccion } from '../nucleo-reproduccion'
 import planetaWGSL from './sombreadores/planeta.wgsl?raw'
 import orbitaWGSL from './sombreadores/orbita.wgsl?raw'
 import puntosWGSL from './sombreadores/puntos.wgsl?raw'
-import { aSegmentos, crearEstela, generarEstrellas, PASO_ESTELA_SIM, RegistroEstela, type Estela } from '../estelas'
+import { aSegmentos, crearEstela, generarEstrellas, limpiarEstela, PASO_ESTELA_SIM, RaspaFlotantes, RegistroEstela, type Estela } from '../estelas'
 import { actualizar, aIntercalado, crearSistema, explotar, puedeExplotar } from '../particulas'
 import { detectarImpactos } from '../mecanica'
 
@@ -309,6 +309,9 @@ export async function montarUltra(
   // de pared hacía que a alta velocidad cada arista cruzara la órbita en recta.
   const LARGO_ESTELA = 600
   const estelas: Estela[] = visuales.map(() => crearEstela(LARGO_ESTELA))
+  /** Scratch reutilizados: ni el merged ni su subida crean por cuadro. */
+  const raspaEstela: number[] = []
+  const raspaFloat = new RaspaFlotantes()
   const registroEstela = new RegistroEstela(PASO_ESTELA_SIM, LARGO_ESTELA)  /**
    * Época del vuelo. Avanza en cada siembra de fuente: una bifurcación es un
    * camino NUEVO, no la continuación del anterior. La posición puede ser
@@ -443,14 +446,17 @@ export async function montarUltra(
         )
       })
     }
-    const vertsEstela: number[] = []
+    raspaEstela.length = 0
     visuales.forEach((v, i) => {
       const e = estelas[i]
-      if (e && e.puntos.length >= 2) vertsEstela.push(...aSegmentos(e, v.color, PASO_ESTELA_SIM))
+      if (e && e.cantidad >= 2) aSegmentos(e, v.color, PASO_ESTELA_SIM, raspaEstela)
     })
-    const cuentaEstela = vertsEstela.length / 7
+    const cuentaEstela = raspaEstela.length / 7
     if (cuentaEstela > 0) {
-      device.queue.writeBuffer(bufEstelas, 0, new Float32Array(vertsEstela))
+      const vista = raspaFloat.vista(raspaEstela.length)
+      vista.set(raspaEstela)
+      device.queue.writeBuffer(bufEstelas, 0, vista)
+      nucleo.medidor.sumarBytes(vista.byteLength)
     }
 
     // Seguimiento: el objetivo persigue al cuerpo seleccionado cada frame.
@@ -537,7 +543,7 @@ export async function montarUltra(
       registroEstela.reiniciar()
       // Solo al bifurcar se limpia: en stream la estela es historia continua.
       if (limpiar) {
-        for (const e of estelas) e.puntos.length = 0
+        for (const e of estelas) limpiarEstela(e)
       } else {
         // Resembrado: la estela se conserva (es historia real) pero se marca
         // una época nueva para que el empalme no se dibuje.

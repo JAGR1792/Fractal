@@ -5,7 +5,7 @@
 
 import { anguloRotacion, aVisual, cargarEscenario, escalaMundo, normalizarPosiciones, slotTextura, tipoPlaneta, NUM_TEXTURAS, TEXTURAS_POR_ID, VELOCIDAD_ROTACION } from '../escenario'
 import { camaraInicial, conectarControles, matrizProyeccion, matrizVista, multiplicar, type EstadoCamara } from '../camara'
-import { aSegmentos, crearEstela, generarEstrellas, PASO_ESTELA_SIM, RegistroEstela, type Estela } from '../estelas'
+import { aSegmentos, crearEstela, generarEstrellas, limpiarEstela, PASO_ESTELA_SIM, RaspaFlotantes, RegistroEstela, type Estela } from '../estelas'
 import { crearSistema, actualizar as actualizarChispas, aIntercalado as chispasIntercaladas, explotar as explotarChispas, puedeExplotar as puedeExplotarChispas } from '../particulas'
 import { detectarImpactos } from '../mecanica'
 import type { FuenteEstados } from '../api'
@@ -284,6 +284,9 @@ export async function montarLite(
   const estelas: Estela[] = []
   const registroEstela = new RegistroEstela(PASO_ESTELA_SIM, 600)
   const bufEstela = gl.createBuffer()!
+  /** Scratch por cuerpo + subida reutilizada: cero allocs por cuadro. */
+  const raspaSegs: number[][] = []
+  const raspaFloat = new RaspaFlotantes()
   /** Época del vuelo: avanza al sembrar una fuente nueva (ver ULTRA/estelas.ts). */
   let epoca = 0
 
@@ -310,7 +313,10 @@ export async function montarLite(
     semilla.set([p0[0], p0[1], p0[2], 0], i * 4)
   })
   const nucleo = new NucleoReproduccion(visuales.length, periodoSim, fuente, semilla)
-  for (const _ of visuales) estelas.push(crearEstela(600))
+  for (const _ of visuales) {
+    estelas.push(crearEstela(600))
+    raspaSegs.push([])
+  }
   /** Posiciones mundo reutilizadas (del núcleo, cero allocs). No retener. */
   const pos: Array<[number, number, number]> = visuales.map(() => [0, 0, 0])
   for (let i = 0; i < pos.length; i++) {
@@ -433,12 +439,17 @@ export async function montarLite(
     // (compartida con ULTRA) y está cubierta por tests.
     visuales.forEach((c, i) => {
       const e = estelas[i]
-      if (!e || e.puntos.length < 2) return
-      const segs = aSegmentos(e, c.color, estado === 'vivo' ? PASO_ESTELA_SIM : 0)
+      if (!e || e.cantidad < 2) return
+      const segs = raspaSegs[i]
+      segs.length = 0
+      aSegmentos(e, c.color, estado === 'vivo' ? PASO_ESTELA_SIM : 0, segs)
       if (segs.length < 14) return
       gl.uniform3f(locColorOrb, c.color[0], c.color[1], c.color[2])
+      const vista = raspaFloat.vista(segs.length)
+      vista.set(segs)
       gl.bindBuffer(gl.ARRAY_BUFFER, bufEstela)
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(segs), gl.DYNAMIC_DRAW)
+      gl.bufferData(gl.ARRAY_BUFFER, vista, gl.DYNAMIC_DRAW)
+      nucleo.medidor.sumarBytes(vista.byteLength)
       gl.enableVertexAttribArray(0)
       gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0)
       gl.enableVertexAttribArray(1)
@@ -461,7 +472,7 @@ export async function montarLite(
       // El muestreo en tiempo sim parte de cero en cada fuente.
       registroEstela.reiniciar()
       if (limpiar) {
-        for (const e of estelas) e.puntos.length = 0
+        for (const e of estelas) limpiarEstela(e)
       } else {
         // Resembrado: la estela es historia real, pero de otro vuelo. Se marca
         // época nueva para no unir los dos tramos con una recta.

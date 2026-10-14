@@ -4,7 +4,11 @@ import {
   crearEstela,
   empujarEstela,
   generarEstrellas,
+  limpiarEstela,
   PASO_ESTELA_SIM,
+  puntoEn,
+  puntosEnOrden,
+  RaspaFlotantes,
   RegistroEstela,
 } from './estelas'
 
@@ -17,11 +21,28 @@ function orbitar(e: ReturnType<typeof crearEstela>, cuantos: number, paso = PASO
 }
 
 describe('estelas y estrellas', () => {
-  it('recorta las más viejas', () => {
+  it('recorta las más viejas sin mover memoria', () => {
     const e = crearEstela(3)
     for (let i = 0; i < 5; i++) empujarEstela(e, [i, 0, 0], i * 16)
-    expect(e.puntos).toHaveLength(3)
-    expect(e.puntos[0][0]).toBe(2)
+    // El anillo no crece: misma capacidad, orden viejo→nuevo intacto.
+    expect(e.ranura).toHaveLength(3)
+    expect(e.cantidad).toBe(3)
+    expect(puntosEnOrden(e).map((p) => p[0])).toEqual([2, 3, 4])
+    expect(puntoEn(e, 0)[0]).toBe(2)
+    limpiarEstela(e)
+    expect(e.cantidad).toBe(0)
+    expect(e.ranura).toHaveLength(3)
+  })
+
+  it('reutiliza las tuplas: empujar no crea', () => {
+    const e = crearEstela(2)
+    empujarEstela(e, [1, 0, 0], 0)
+    const primera = puntoEn(e, 0)
+    empujarEstela(e, [2, 0, 0], 1)
+    empujarEstela(e, [3, 0, 0], 2)
+    // La tupla más vieja se recicló para el punto nuevo (misma referencia).
+    expect(puntosEnOrden(e)).toContain(primera)
+    expect(primera[0]).toBe(3)
   })
 
   it('corta el hueco: separación mayor que el paso', () => {
@@ -76,6 +97,24 @@ describe('estelas y estrellas', () => {
     expect(segs[segs.length - 1]).toBeCloseTo(2 / 3, 5)
   })
 
+  it('aSegmentos anexa al scratch y la raspa reutiliza el respaldo', () => {
+    const e = crearEstela(10)
+    empujarEstela(e, [0, 0, 0], 0)
+    empujarEstela(e, [1, 0, 0], PASO_ESTELA_SIM)
+    const scratch: number[] = []
+    const devuelto = aSegmentos(e, [1, 0, 0], PASO_ESTELA_SIM, scratch)
+    expect(devuelto).toBe(scratch)
+    expect(scratch).toHaveLength(14)
+    const raspa = new RaspaFlotantes()
+    const v1 = raspa.vista(14)
+    v1.set(scratch)
+    expect(raspa.vista(7).buffer).toBe(v1.buffer)
+    // Al pedir más de lo que cabe, crece una vez y sigue reutilizando.
+    const grande = raspa.vista(1000)
+    expect(grande.length).toBe(1000)
+    expect(raspa.vista(1000).buffer).toBe(grande.buffer)
+  })
+
   it('estrellas deterministas sobre el cascarón', () => {
     const a = generarEstrellas(200, 42, 900)
     const b = generarEstrellas(200, 42, 900)
@@ -108,10 +147,11 @@ describe('registro de estela en tiempo sim', () => {
       reg.registrar(e, t, 0, pos)
     }
     // El espaciado entre puntos es SIEMPRE el paso (salvo el primero).
-    for (let k = 1; k < e.puntos.length; k++) {
-      expect(e.puntos[k][3] - e.puntos[k - 1][3]).toBeCloseTo(PASO_ESTELA_SIM, 6)
+    const ordenados = puntosEnOrden(e)
+    for (let k = 1; k < ordenados.length; k++) {
+      expect(ordenados[k][3] - ordenados[k - 1][3]).toBeCloseTo(PASO_ESTELA_SIM, 6)
     }
-    expect(e.puntos.length).toBeGreaterThanOrEqual(3)
+    expect(ordenados.length).toBeGreaterThanOrEqual(3)
   })
 
   it('a velocidad alta rellena los pasos intermedios: la geometría no cambia', () => {
@@ -136,7 +176,7 @@ describe('registro de estela en tiempo sim', () => {
     }
 
     // Los tiempos grabados son idénticos: la estela no depende de los fps.
-    const tiempos = (e: typeof lento) => e.puntos.map((p) => p[3])
+    const tiempos = (q: typeof lento) => puntosEnOrden(q).map((p) => p[3])
     expect(tiempos(rapido)).toEqual(tiempos(lento))
     // Y por tanto las aristas también: nada de cuerdas más largas a más fps.
     const segs = aSegmentos(lento, [1, 1, 1], PASO_ESTELA_SIM)
@@ -149,18 +189,18 @@ describe('registro de estela en tiempo sim', () => {
     const pos = orbita(2.36e6)
     // La primera llamada solo fija la referencia: no inventa pasado.
     expect(reg.registrar(e, -5, 0, pos)).toBe(0)
-    expect(e.puntos).toHaveLength(0)
+    expect(e.cantidad).toBe(0)
     reg.registrar(e, 0, 0, pos)
-    const antes = e.puntos.length
+    const antes = e.cantidad
 
     // Tiempo que retrocede (no debería pasar): se reancla y sigue grabando, no
     // se queda mudo para siempre.
     reg.registrar(e, -1000, 0, pos)
-    expect(e.puntos.length).toBeGreaterThan(antes)
+    expect(e.cantidad).toBeGreaterThan(antes)
     // Y a partir de ahí vuelve al paso constante.
-    const ultimo = e.puntos[e.puntos.length - 1][3]
+    const ultimo = puntoEn(e, e.cantidad - 1)[3]
     reg.registrar(e, ultimo + PASO_ESTELA_SIM, 0, pos)
-    expect(e.puntos[e.puntos.length - 1][3]).toBeCloseTo(ultimo + PASO_ESTELA_SIM, 6)
+    expect(puntoEn(e, e.cantidad - 1)[3]).toBeCloseTo(ultimo + PASO_ESTELA_SIM, 6)
   })
 
   it('un hueco enorme reancla en vez de rellenar miles de puntos', () => {
@@ -168,14 +208,14 @@ describe('registro de estela en tiempo sim', () => {
     const reg = new RegistroEstela(PASO_ESTELA_SIM, 600)
     const pos = orbita(2.36e6)
     reg.registrar(e, 0, 0, pos)
-    const antes = e.puntos.length
+    const antes = e.cantidad
     // Salto de 100000 pasos: muy por encima del tope de seguridad (2400 con
     // capacidad 600). No puede intentar rellenarlos todos de golpe.
     reg.registrar(e, PASO_ESTELA_SIM * 100_000, 0, pos)
-    expect(e.puntos.length - antes).toBeLessThanOrEqual(1)
+    expect(e.cantidad - antes).toBeLessThanOrEqual(1)
     // Y la estela sigue viva después (el próximo paso sí se graba).
     reg.registrar(e, PASO_ESTELA_SIM * 100_001, 0, pos)
-    expect(e.puntos.length).toBeGreaterThan(antes)
+    expect(e.cantidad).toBeGreaterThan(antes)
   })
 
   it('no parte la estela al recuperarse de un bloqueo del cómputo', () => {
@@ -189,12 +229,13 @@ describe('registro de estela en tiempo sim', () => {
     // Salto de 200 pasos, el peor caso medido a velocidad 200x.
     reg.registrar(e, PASO_ESTELA_SIM * 200, 0, pos)
     // Ni un hueco: todos los puntos consecutivos a un paso exacto.
-    expect(e.puntos.length).toBe(200)
-    for (let k = 1; k < e.puntos.length; k++) {
-      expect(e.puntos[k][3] - e.puntos[k - 1][3]).toBeCloseTo(PASO_ESTELA_SIM, 6)
+    expect(e.cantidad).toBe(200)
+    const ordenados200 = puntosEnOrden(e)
+    for (let k = 1; k < ordenados200.length; k++) {
+      expect(ordenados200[k][3] - ordenados200[k - 1][3]).toBeCloseTo(PASO_ESTELA_SIM, 6)
     }
     // Y `aSegmentos` no corta nada: la estela sigue entera.
     const segs = aSegmentos(e, [1, 1, 1], PASO_ESTELA_SIM)
-    expect(segs).toHaveLength((e.puntos.length - 1) * 14)
+    expect(segs).toHaveLength((e.cantidad - 1) * 14)
   })
 })

@@ -28,9 +28,19 @@
  */
 export type PuntoEstela = [number, number, number, number, number, number]
 
-/** Una estela: anillo de posiciones recientes de un cuerpo. */
+/**
+ * Una estela: anillo de posiciones recientes de un cuerpo (libro §3.3.7).
+ *
+ * Cola circular fija: `ranura` se preasigna una vez con capacidad `maximo` y
+ * jamás se realoja; `inicio` marca el punto más viejo y `cantidad` los vivos.
+ * Empujar es O(1) sin `shift()` (que era un memmove O(n) por punto: a alta
+ * velocidad se rellenan cientos de puntos por cuadro y el frame se atraganta).
+ * Las tuplas también se reutilizan: empujar escribe en el slot, no crea.
+ */
 export interface Estela {
-  puntos: PuntoEstela[]
+  ranura: PuntoEstela[]
+  inicio: number
+  cantidad: number
   maximo: number
 }
 
@@ -46,14 +56,18 @@ export interface Estela {
  */
 export const PASO_ESTELA_SIM = 12000
 
-/** Crea una estela vacía con capacidad `maximo`. */
+/** Crea una estela vacía con capacidad `maximo` (slots preasignados una vez). */
 export function crearEstela(maximo: number): Estela {
-  return { puntos: [], maximo }
+  if (!(maximo >= 2)) throw new Error('la estela necesita capacidad para al menos 2 puntos')
+  const ranura: PuntoEstela[] = []
+  for (let i = 0; i < maximo; i++) ranura.push([0, 0, 0, 0, 0, 0])
+  return { ranura, inicio: 0, cantidad: 0, maximo }
 }
 
 /**
- * Empuja una posición (clona); recorta las más viejas. Uso directo en tests y
- * como primitiva de `RegistroEstela`.
+ * Empuja una posición en O(1): escribe en el slot que toca y avanza el
+ * inicio si el anillo estaba lleno. Sin allocs, sin memmove. Uso directo en
+ * tests y como primitiva de `RegistroEstela`.
  */
 export function empujarEstela(
   e: Estela,
@@ -62,9 +76,42 @@ export function empujarEstela(
   epoca = 0,
   tPared = tSim,
 ): Estela {
-  e.puntos.push([p[0], p[1], p[2], tSim, epoca, tPared])
-  while (e.puntos.length > e.maximo) e.puntos.shift()
+  let destino: PuntoEstela
+  if (e.cantidad < e.maximo) {
+    destino = e.ranura[(e.inicio + e.cantidad) % e.maximo]
+    e.cantidad++
+  } else {
+    destino = e.ranura[e.inicio]
+    e.inicio = (e.inicio + 1) % e.maximo
+  }
+  destino[0] = p[0]
+  destino[1] = p[1]
+  destino[2] = p[2]
+  destino[3] = tSim
+  destino[4] = epoca
+  destino[5] = tPared
   return e
+}
+
+/** Punto lógico `k` (0 = más viejo). Sin copiar. */
+export function puntoEn(e: Estela, k: number): PuntoEstela {
+  return e.ranura[(e.inicio + k) % e.maximo]
+}
+
+/**
+ * Copia en orden viejo→nuevo. Solo para tests y debug: el render itera con
+ * `puntoEn` sin copiar nada.
+ */
+export function puntosEnOrden(e: Estela): PuntoEstela[] {
+  const salida: PuntoEstela[] = []
+  for (let k = 0; k < e.cantidad; k++) salida.push(puntoEn(e, k))
+  return salida
+}
+
+/** Vacía la estela sin soltar la memoria (bifurcación con limpieza). */
+export function limpiarEstela(e: Estela): void {
+  e.inicio = 0
+  e.cantidad = 0
 }
 
 /**
@@ -218,25 +265,30 @@ export type VerticeLinea = [number, number, number, number, number, number, numb
  * `paso` es el espaciado con que se muestreó la estela. Es determinista, así
  * que una separación mayor delata un hueco real sin depender de temporizadores
  * de pared.
+ *
+ * `destino` es el scratch del render: si se da, se ANEXA sin crear (cero
+ * allocs en caliente; el llamador lo vacía con `length = 0`); si no, se
+ * devuelve un arreglo nuevo.
  */
 export function aSegmentos(
   e: Estela,
   color: [number, number, number],
   paso = 0,
+  destino?: number[],
 ): number[] {
-  const salida: number[] = []
-  const n = e.puntos.length
+  const salida = destino ?? []
+  const n = e.cantidad
   if (n < 2) return salida
 
   const rastreador = new RastreadorPasos()
-  let epocaActual = e.puntos[0][4]
+  let epocaActual = puntoEn(e, 0)[4]
   // Tolerancia del 50% sobre el paso: absorbe el redondeo en coma flotante de
   // las marcas de tiempo sin dejar pasar un hueco de verdad.
   const saltoMaxS = paso > 0 ? paso * 1.5 : 0
 
   for (let i = 0; i + 1 < n; i++) {
-    const p = e.puntos[i]
-    const q = e.puntos[i + 1]
+    const p = puntoEn(e, i)
+    const q = puntoEn(e, i + 1)
 
     // Época: dos tramos de vuelos distintos no son vecinos, aunque lo parezcan.
     if (q[4] !== epocaActual) {
@@ -261,6 +313,24 @@ export function aSegmentos(
     salida.push(q[0], q[1], q[2], color[0], color[1], color[2], a1)
   }
   return salida
+}
+
+/**
+ * Scratch de `Float32Array` reutilizado para subir vértices a GPU.
+ *
+ * `writeBuffer`/`bufferData` copian al momento, así que la misma vista sirve
+ * para draws secuenciales. Solo crece (nunca en caliente estable): la
+ * conversión `number[] → Float32Array` por cuadro y por cuerpo era un alloc
+ * grande en cada frame con estelas visibles.
+ */
+export class RaspaFlotantes {
+  private buf = new Float32Array(0)
+
+  /** Vista reutilizada de longitud `n`. */
+  vista(n: number): Float32Array {
+    if (this.buf.length < n) this.buf = new Float32Array(Math.max(n, 64))
+    return this.buf.subarray(0, n)
+  }
 }
 
 /** Generador determinista (mulberry32) para estrellas estables entre cargas. */
