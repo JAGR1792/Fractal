@@ -39,9 +39,7 @@ async fn fuerzas(Json(peticion): Json<PeticionFuerzas>) -> Json<RespuestaFuerzas
             [a.x, a.y, a.z]
         })
         .collect();
-    Json(RespuestaFuerzas {
-        aceleraciones: resultado,
-    })
+    Json(RespuestaFuerzas { aceleraciones: resultado })
 }
 
 #[tokio::main]
@@ -52,10 +50,7 @@ async fn main() {
         .layer(CorsLayer::permissive())
         .with_state(EstadoWorker::default());
 
-    let puerto: u16 = std::env::var("PUERTO")
-        .ok()
-        .and_then(|t| t.parse().ok())
-        .unwrap_or(3001);
+    let puerto: u16 = std::env::var("PUERTO").ok().and_then(|t| t.parse().ok()).unwrap_or(3001);
     let direccion = format!("127.0.0.1:{puerto}");
     let oyente = tokio::net::TcpListener::bind(&direccion).await.unwrap();
     println!("fractal-worker escuchando en http://{direccion}");

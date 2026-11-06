@@ -294,23 +294,28 @@ async fn fuerzas_distribuidas(
     Json(peticion): Json<PeticionFuerzasDistribuidas>,
 ) -> Result<Json<serde_json::Value>, FalloApi> {
     let nodos = distribuido::nodos_desde_env("NODOS_TRABAJADORES");
-    let resultado = if let Some(acels) = distribuido::fuerzas_distribuidas(&nodos, &peticion.cuerpos, peticion.suavizado).await {
+    let resultado = if let Some(acels) =
+        distribuido::fuerzas_distribuidas(&nodos, &peticion.cuerpos, peticion.suavizado).await
+    {
         acels
     } else {
         // fallback local (paralelo si está disponible)
         #[cfg(feature = "paralelo")]
         {
-            fractal_fisica::paralelo::calcular_aceleraciones_suavizadas_paralelo(&peticion.cuerpos, peticion.suavizado)
+            fractal_fisica::paralelo::calcular_aceleraciones_suavizadas_paralelo(
+                &peticion.cuerpos,
+                peticion.suavizado,
+            )
         }
         #[cfg(not(feature = "paralelo"))]
         {
-            fractal_fisica::gravedad::calcular_aceleraciones_suavizadas(&peticion.cuerpos, peticion.suavizado)
+            fractal_fisica::gravedad::calcular_aceleraciones_suavizadas(
+                &peticion.cuerpos,
+                peticion.suavizado,
+            )
         }
     };
-    let datos: Vec<[f64; 3]> = resultado
-        .iter()
-        .map(|v| [v.x, v.y, v.z])
-        .collect();
+    let datos: Vec<[f64; 3]> = resultado.iter().map(|v| [v.x, v.y, v.z]).collect();
     Ok(Json(serde_json::json!({"aceleraciones": datos, "nodos": nodos.len()})))
 }
 
@@ -318,11 +323,7 @@ async fn fuerzas_distribuidas(
 async fn metricas() -> String {
     let total = SOLICITUDES_TOTALES.load(Ordering::Relaxed);
     let latencia_us = LATENCIA_US_TOTAL.load(Ordering::Relaxed);
-    let promedio_ms = if total == 0 {
-        0.0
-    } else {
-        (latencia_us as f64 / total as f64) / 1000.0
-    };
+    let promedio_ms = if total == 0 { 0.0 } else { (latencia_us as f64 / total as f64) / 1000.0 };
     format!(
         "# HELP fractal_solicitudes_totales Total de solicitudes HTTP\\n\
          # TYPE fractal_solicitudes_totales counter\\n\

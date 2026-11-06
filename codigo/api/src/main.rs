@@ -19,9 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let hilos: usize = std::env::var("FRACTAL_HILOS")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or_else(|| {
-                std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4)
-            });
+            .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4));
         if let Err(e) = rayon::ThreadPoolBuilder::new().num_threads(hilos).build_global() {
             tracing::warn!("no se pudo configurar el pool de rayon: {e}");
         } else {

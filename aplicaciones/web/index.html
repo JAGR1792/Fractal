@@ -57,7 +57,7 @@
     <div id="app">
       <div id="barra">
         <strong>Fractal</strong>
-        <select id="selEscenario" title="Escenario">
+        <select id="selEscenario" title="Escenario" aria-label="Escenario">
           <option value="dos_cuerpos">Tierra-Luna</option>
           <option value="sistema_solar">Sistema Solar</option>
         </select>
@@ -74,7 +74,7 @@
       <div id="sandbox" aria-label="Panel sandbox: edita parámetros y lanza simulaciones"></div>
       <canvas id="escena" tabindex="0" aria-label="Vista 3D del sistema solar. Flechas rotan, más y menos acercan, R resetea."></canvas>
       <div id="aviso" role="status"></div>
-      <table id="tabla" aria-label="Datos tabulares de cuerpos (alternativa accesible)"></table>
+      <table id="tabla" aria-label="Datos tabulares de cuerpos (alternativa accesible)"><thead><tr><th scope="col">Cuerpo</th></tr></thead></table>
     </div>
     <script type="importmap">
       {

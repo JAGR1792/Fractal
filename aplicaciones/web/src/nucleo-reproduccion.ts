@@ -49,7 +49,7 @@ export class NucleoReproduccion {
   constructor(nCuerpos: number, periodoSim: number | null, fuente: FuenteEstados | null = null, semilla?: Float32Array) {
     if (!(nCuerpos >= 1)) throw new Error('el núcleo necesita al menos un cuerpo')
     this.n = nCuerpos
-    this.ritmo = ritmoParaPeriodo(periodoSim ?? NaN)
+    this.ritmo = ritmoParaPeriodo(periodoSim ?? Number.NaN)
     this.escala = fuente?.escala ?? 1
     this.centros = new Float32Array(Math.max(nCuerpos * 4, 4))
     if (semilla && semilla.length >= nCuerpos * 4) this.centros.set(semilla.subarray(0, nCuerpos * 4))
@@ -191,7 +191,7 @@ export class NucleoReproduccion {
    * `NaN` en `cargando`: la barra pinta '—' en vez de inventar tiempo.
    */
   leerTiempo(): number {
-    return this.estado === 'vivo' ? this.mostrado : NaN
+    return this.estado === 'vivo' ? this.mostrado : Number.NaN
   }
 
   leerBloqueActual(): Float32Array | null {

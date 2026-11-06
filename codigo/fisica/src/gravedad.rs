@@ -144,10 +144,7 @@ pub fn calcular_aceleraciones_paralelo(cuerpos: &[Cuerpo]) -> Vec<Vec3> {
 
 /// Versión paralela de [`calcular_aceleraciones_suavizadas`] (feature `paralelo`).
 #[cfg(feature = "paralelo")]
-pub fn calcular_aceleraciones_suavizadas_paralelo(
-    cuerpos: &[Cuerpo],
-    suavizado: f64,
-) -> Vec<Vec3> {
+pub fn calcular_aceleraciones_suavizadas_paralelo(cuerpos: &[Cuerpo], suavizado: f64) -> Vec<Vec3> {
     use rayon::prelude::*;
     assert!(suavizado >= 0.0 && suavizado.is_finite(), "el suavizado debe ser ≥ 0 y finito");
     let n = cuerpos.len();

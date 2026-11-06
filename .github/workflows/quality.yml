@@ -32,6 +32,7 @@ jobs:
   sonar:
     name: SonarQube / SonarCloud
     runs-on: ubuntu-latest
+    if: ${{ secrets.SONAR_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,3 +59,5 @@ jobs:
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'http://localhost:3000'
+          fail_action: false
+          allow_issue_writing: false

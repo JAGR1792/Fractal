@@ -78,11 +78,7 @@ pub async fn fuerzas_remotas(
         return Err(format!("nodo {} respondió {}", nodo.url, resp.status()));
     }
 
-    let bytes = resp
-        .collect()
-        .await
-        .map_err(|e| format!("lectura: {e}"))?
-        .to_bytes();
+    let bytes = resp.collect().await.map_err(|e| format!("lectura: {e}"))?.to_bytes();
     let parsed: RespuestaFuerzas =
         serde_json::from_slice(&bytes).map_err(|e| format!("json: {e}"))?;
 
