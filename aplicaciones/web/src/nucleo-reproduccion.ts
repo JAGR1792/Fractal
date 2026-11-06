@@ -107,8 +107,12 @@ export class NucleoReproduccion {
   podar(mantenerDesde: number): number {
     const b = this.fro.bloques
     if (!b || b.length === 0) return 0
+    // No podar por delante del instante mostrado: si la reproducción está
+    // pausada, cortar el bloque actual teletransporta los cuerpos al siguiente
+    // bloque disponible en el siguiente cuadro.
+    const corte = Math.min(mantenerDesde, this.mostrado)
     let cortar = 0
-    while (cortar < b.length - 2 && b[cortar][0] < mantenerDesde) cortar++
+    while (cortar < b.length - 2 && b[cortar][0] < corte) cortar++
     if (cortar > 0) {
       b.splice(0, cortar)
       this.medidor.sumarPoda()
@@ -135,6 +139,12 @@ export class NucleoReproduccion {
     const pedido = dtParedSeg * velocidad * this.ritmo
     const previo = this.fro.tiempo
     const t = avanzar(this.fro, dtParedSeg, velocidad, this.ritmo, pausado)
+    // Pausado: el diorama se queda congelado (no se escribe ni se avanza el
+    // reloj). Evita que la poda de bloques teletransporte los cuerpos.
+    if (pausado) {
+      this.medidor.hambre = false
+      return 'vivo'
+    }
     // Monótono aunque una poda reancle por detrás: retroceder el reloj es
     // teletransportar los cuerpos.
     if (t > this.mostrado) this.mostrado = t
