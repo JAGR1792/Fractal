@@ -20,7 +20,6 @@ import {
   escalaMundo,
   tipoPlaneta,
   urlTextura,
-  VELOCIDAD_ROTACION,
   type CuerpoVisual,
   type ModoEscala,
 } from '../escenario'
