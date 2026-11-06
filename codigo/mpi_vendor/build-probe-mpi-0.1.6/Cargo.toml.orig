@@ -1,0 +1,24 @@
+[package]
+name = "build-probe-mpi"
+version = "0.1.6"
+authors = [
+    "Benedikt Steinbusch <ben@rockshrub.de>",
+    "Andrew Gaspar <andrew.gaspar@outlook.com>",
+    "Jed Brown <jed@jedbrown.org>",
+]
+description = "Probes the system for an installation of an MPI library"
+homepage = "https://github.com/rsmpi/rsmpi"
+repository = "https://github.com/rsmpi/rsmpi"
+categories = [ "development-tools::build-utils" ]
+license = "MIT OR Apache-2.0"
+edition = "2021"
+rust-version = "1.65"
+
+[dependencies]
+shell-words = "1.1.1"
+
+[target.'cfg(unix)'.dependencies]
+pkg-config = "0.3.33"
+
+[package.metadata.release]
+tag-name = "{{crate_name}}-{{version}}"

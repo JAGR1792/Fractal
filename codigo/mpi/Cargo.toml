@@ -1,0 +1,10 @@
+[workspace]
+
+[package]
+name = "fractal-mpi"
+version = "0.1.0"
+edition = "2024"
+description = "Demostración de computación distribuida con MPI (MS-MPI) para Fractal"
+
+[dependencies]
+fractal-fisica = { path = "../fisica" }
