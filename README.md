@@ -38,17 +38,7 @@ Fractal/
 └── rustfmt.toml         ← Configuración del formateador
 ```
 
-## Estado del proyecto
 
-**Etapa 0 — Especificación científica:** completada
-
-- [x] Modelo gravitatorio documentado
-- [x] Integrador Velocity Verlet documentado
-- [x] Escenarios de referencia creados
-- [x] ADRs de arquitectura
-- [x] CI/CD con GitHub Actions
-
-**Etapa 1 — Motor físico mínimo:** próxima
 
 ## Cómo contribuir
 
