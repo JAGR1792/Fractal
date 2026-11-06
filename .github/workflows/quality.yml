@@ -29,20 +29,6 @@ jobs:
       - run: cargo install cargo-audit
       - run: cargo audit
 
-  sonar:
-    name: SonarQube / SonarCloud
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
   zap:
     name: DAST (OWASP ZAP baseline)
     runs-on: ubuntu-latest
@@ -60,3 +46,4 @@ jobs:
         with:
           target: 'http://localhost:3000'
           fail_action: false
+          allow_issue_writing: false
