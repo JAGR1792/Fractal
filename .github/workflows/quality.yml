@@ -29,6 +29,4 @@ jobs:
       - run: cargo install cargo-audit
       - run: cargo audit
 
-  # ZAP se ejecuta localmente o en un job separado: el upload de artefactos
-  # falla en el runner actual (issue de infraestructura de GitHub Actions).
-          allow_issue_writing: false
+  # ZAP se ejecuta localmente: el upload de artefactos falla en el runner.
