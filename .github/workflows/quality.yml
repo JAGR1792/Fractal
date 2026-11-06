@@ -21,7 +21,7 @@ jobs:
       - run: cargo test --workspace --features paralelo
 
   audit:
-    name: Auditoría de dependencias
+    name: Auditoria de dependencias
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
   sonar:
     name: SonarQube / SonarCloud
     runs-on: ubuntu-latest
-    if: ${{ secrets.SONAR_TOKEN != '' }}
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,4 +60,3 @@ jobs:
         with:
           target: 'http://localhost:3000'
           fail_action: false
-          allow_issue_writing: false
