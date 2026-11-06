@@ -6,10 +6,10 @@
 //! vive en el servidor y el cliente solo la lee.
 
 use crate::modelos::PeticionSimulacion;
-use fractal_fisica::{
-    cuerpo::Cuerpo,
-    estado::{Estado, simular_con},
-};
+use fractal_fisica::cuerpo::Cuerpo;
+use fractal_fisica::estado::Estado;
+#[cfg(not(feature = "paralelo"))]
+use fractal_fisica::estado::simular_con;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -139,6 +139,15 @@ impl Sesiones {
         while sesion.tiempo < desde_t + ventana && guardias < 50 {
             guardias += 1;
             let pasos = (BLOQUES_POR_TANDA * cada_n).clamp(cada_n, MAX_PASOS_TANDA);
+            #[cfg(feature = "paralelo")]
+            let nuevos = fractal_fisica::paralelo::simular_con_paralelo(
+                &sesion.actual,
+                dt,
+                pasos,
+                cada_n,
+                suavizado,
+            );
+            #[cfg(not(feature = "paralelo"))]
             let nuevos = simular_con(&sesion.actual, dt, pasos, cada_n, suavizado);
             let base_t = sesion.tiempo;
             let mut primero = true;

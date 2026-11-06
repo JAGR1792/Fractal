@@ -370,6 +370,10 @@ dependencies = [
  "axum",
  "axum-test",
  "fractal-fisica",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "rayon",
  "serde",
  "serde_json",
  "tokio",
@@ -384,6 +388,7 @@ name = "fractal-fisica"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "rayon",
  "serde",
  "serde_json",
 ]

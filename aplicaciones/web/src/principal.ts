@@ -11,6 +11,7 @@ import {
 } from './api'
 import { montarSandbox, aplicarEdicion, pintarTelemetria, type EdicionSandbox } from './sandbox'
 import { elementosDeCuerpo, formatearDistancia } from './mecanica'
+import { fuenteAnalitica } from './orbitas'
 import { periodoDelSistema, ritmoParaPeriodo, SEGUNDOS_POR_VUELTA } from './frontera'
 import { textoMedicion, type FotoMedicion } from './medicion'
 
@@ -63,6 +64,8 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
 
   // Escenario local una sola vez (config + tabla + base del sandbox).
   const escenarioId = escenarioPedido()
+  const modoDemo = new URLSearchParams(window.location.search).get('demo') === '1'
+    || new URLSearchParams(window.location.search).get('elipses') === '1'
   // Escala real opcional (ADR-0009): proporciones verdaderas con `?real=1`.
   const modoReal: ModoEscala = new URLSearchParams(window.location.search).get('real') === '1' ? 'real' : 'exagerado'
   const urlEscenario = `/datos/${escenarioId}.json`
@@ -101,6 +104,12 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   } else {
     const { montarLite } = await import('./lite/webgl2_minimo')
     control = await montarLite(lienzo, urlEscenario, null, periodoSim, modoReal)
+  }
+
+  // Modo demo (diseño): órbitas keplerianas perfectas, sin servidor.
+  if (modoDemo && vis.length > 0) {
+    control.fijarFuente?.(fuenteAnalitica(vis, dt0))
+    sesionId = 'analitico'
   }
 
   // Selector de escenario: cambia `?escenario=` y recarga.
@@ -172,7 +181,14 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
   async function conectar(): Promise<boolean> {
     if (vis.length === 0 || sesionId) return sesionId !== null
     const creada = await crearSesion(baseApiUrl, vis, dt0, 0)
-    if (!creada) return false
+    if (!creada) {
+      if (vis.length > 0 && !sesionId) {
+        control.fijarFuente?.(fuenteAnalitica(vis, dt0))
+        sesionId = 'analitico'
+        panel?.fijarEstado('demo local · elipses perfectas')
+      }
+      return sesionId !== null
+    }
     sesionId = creada.id
     const escalaM = escalaMundo(vis)
     escala = escalaM
@@ -345,6 +361,7 @@ async function arrancar(forzar?: PerfilRender): Promise<void> {
         pintarTelemetria(cajaSandbox, null)
       }
     }
+    if (sesionId === 'analitico' || modoDemo) return
     if (sondeando) return
     if (!sesionId) {
       await conectar()

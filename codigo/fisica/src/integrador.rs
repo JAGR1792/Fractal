@@ -93,6 +93,33 @@ pub fn paso_velocity_verlet_con(cuerpos: &mut [Cuerpo], dt: f64, suavizado: f64)
     }
 }
 
+/// Un paso de Velocity Verlet paralelo (feature `paralelo`).
+#[cfg(feature = "paralelo")]
+pub fn paso_velocity_verlet_paralelo(cuerpos: &mut [Cuerpo], dt: f64) {
+    paso_velocity_verlet_con_paralelo(cuerpos, dt, 0.0);
+}
+
+/// Un paso de Velocity Verlet paralelo con suavizado (feature `paralelo`).
+#[cfg(feature = "paralelo")]
+pub fn paso_velocity_verlet_con_paralelo(cuerpos: &mut [Cuerpo], dt: f64, suavizado: f64) {
+    use crate::gravedad::calcular_aceleraciones_suavizadas_paralelo;
+    assert!(dt > 0.0, "el paso dt debe ser positivo");
+
+    let n = cuerpos.len();
+
+    let aceleraciones = calcular_aceleraciones_suavizadas_paralelo(cuerpos, suavizado);
+
+    for i in 0..n {
+        cuerpos[i].posicion += cuerpos[i].velocidad * dt + aceleraciones[i] * (0.5 * dt * dt);
+    }
+
+    let nuevas_aceleraciones = calcular_aceleraciones_suavizadas_paralelo(cuerpos, suavizado);
+
+    for i in 0..n {
+        cuerpos[i].velocidad += (aceleraciones[i] + nuevas_aceleraciones[i]) * (0.5 * dt);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,5 +162,28 @@ mod tests {
         // Pero como orbita, el desplazamiento es un poco menos
         assert!(desplazamiento > 90_000_000.0);
         assert!(desplazamiento < 120_000_000.0);
+    }
+
+    #[cfg(feature = "paralelo")]
+    #[test]
+    fn paralelo_equivale_a_serial_un_paso() {
+        let mut a = vec![
+            Cuerpo::nuevo("sol", "Sol", 1.989e30, 6.957e8, Vec3::cero(), Vec3::cero()),
+            Cuerpo::nuevo(
+                "t",
+                "T",
+                5.972e24,
+                6.371e6,
+                Vec3::new(1.496e11, 0.0, 0.0),
+                Vec3::new(0.0, 29780.0, 0.0),
+            ),
+        ];
+        let mut b = a.clone();
+        paso_velocity_verlet(&mut a, 3600.0);
+        paso_velocity_verlet_paralelo(&mut b, 3600.0);
+        for (ca, cb) in a.iter().zip(b.iter()) {
+            assert!((ca.posicion.x - cb.posicion.x).abs() < 1e-9);
+            assert!((ca.velocidad.x - cb.velocidad.x).abs() < 1e-9);
+        }
     }
 }

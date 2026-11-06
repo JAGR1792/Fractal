@@ -126,3 +126,21 @@ async fn sesion_viva_con_cursor_y_patch() {
         .assert_status(axum::http::StatusCode::NO_CONTENT);
     servidor.get(&format!("/api/v1/sesiones/{id}/estados?desde=0")).await.assert_status_not_found();
 }
+
+#[tokio::test]
+async fn fuerzas_distribuidas_fallback_local() {
+    let servidor = TestServer::new(crear_app(Almacen::nuevo(), Sesiones::nuevo())).unwrap();
+    let cuerpo = serde_json::json!({
+        "cuerpos": [
+            {"id":"sol","nombre":"Sol","masa":1.989e30,"radio":6.957e8,"posicion":{"x":0.0,"y":0.0,"z":0.0},"velocidad":{"x":0.0,"y":0.0,"z":0.0}},
+            {"id":"t","nombre":"T","masa":5.972e24,"radio":6.371e6,"posicion":{"x":1.496e11,"y":0.0,"z":0.0},"velocidad":{"x":0.0,"y":29780.0,"z":0.0}}
+        ],
+        "suavizado": 0.0
+    });
+    let respuesta = servidor.post("/api/v1/fuerzas/distribuida").json(&cuerpo).await;
+    respuesta.assert_status_ok();
+    let json: Value = respuesta.json();
+    assert_eq!(json["nodos"], 0);
+    let acels = json["aceleraciones"].as_array().unwrap();
+    assert_eq!(acels.len(), 2);
+}

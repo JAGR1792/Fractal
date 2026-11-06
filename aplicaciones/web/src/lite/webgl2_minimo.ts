@@ -331,7 +331,7 @@ export async function montarLite(
   let pausado = false
   let velocidad = 1
   let vivo = true
-  /** Reloj propio de la rotación, en tiempo de pared escalado (no simulado). */
+  /** Reloj propio de la rotación, en tiempo de pared (segundos reales). */
   let relojRotacion = 0
   let ultimoMs = performance.now()
 
@@ -358,7 +358,7 @@ export async function montarLite(
         pos[i][2] = q[i * 4 + 2]
       }
     }
-    gl.clearColor(0.03, 0.03, 0.1, 1)
+    gl.clearColor(0.03, 0.03, 0.1, 0)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     gl.enable(gl.DEPTH_TEST)
 
@@ -406,7 +406,7 @@ export async function montarLite(
     for (let k = 0; k < locTex.length; k++) gl.uniform1i(locTex[k], k)
     gl.bindVertexArray(vaoEsfera)
     // Rotación propia: reloj de PARED propio, avanzado solo si no está pausado.
-    if (!pausado) relojRotacion += dtS * VELOCIDAD_ROTACION
+    if (!pausado) relojRotacion += dtS
     visuales.forEach((c, i) => {
       const [x, y, z] = pos[i] ?? [10, 0, 0]
       gl.uniform3f(locCentro, x, y, z)

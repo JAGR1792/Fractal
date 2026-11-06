@@ -7,6 +7,11 @@ license = "MIT"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+rayon = { version = "1.12", optional = true }
+
+[features]
+default = []
+paralelo = ["dep:rayon"]
 
 [dev-dependencies]
 criterion = { version = "0.7", features = ["html_reports"] }

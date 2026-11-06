@@ -14,6 +14,21 @@ use tower_http::cors::CorsLayer;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().with_env_filter("fractal_api=debug,tower_http=info").init();
 
+    #[cfg(feature = "paralelo")]
+    {
+        let hilos: usize = std::env::var("FRACTAL_HILOS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| {
+                std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4)
+            });
+        if let Err(e) = rayon::ThreadPoolBuilder::new().num_threads(hilos).build_global() {
+            tracing::warn!("no se pudo configurar el pool de rayon: {e}");
+        } else {
+            tracing::info!("pool paralelo configurado con {hilos} hilos");
+        }
+    }
+
     let almacen = Almacen::nuevo();
     let sesiones = Sesiones::nuevo();
     lanzar_recolector(sesiones.clone());

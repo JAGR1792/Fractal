@@ -23,6 +23,14 @@ uuid = { version = "1", features = ["v4", "serde"] }
 tower-http = { version = "0.5", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rayon = { version = "1.12", optional = true }
+hyper = "1"
+hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1", "tokio"] }
+http-body-util = "0.1"
+
+[features]
+default = ["paralelo"]
+paralelo = ["fractal-fisica/paralelo", "dep:rayon"]
 
 [dev-dependencies]
 axum-test = "15"

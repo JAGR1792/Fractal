@@ -86,7 +86,8 @@ export async function montarMotor(
     visuales = aVisual(await cargarEscenario(urlEscenario), modo)
   } catch { /* sin escenario: demo interna */ }
 
-  const render = new THREE.WebGLRenderer({ canvas: lienzo, antialias: true })
+  const render = new THREE.WebGLRenderer({ canvas: lienzo, antialias: true, alpha: true })
+  render.setClearColor(0x000000, 0)
   render.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1))
   const escena = new THREE.Scene()
   escena.background = new THREE.Color(0x08081a)
@@ -210,7 +211,7 @@ export async function montarMotor(
   let seleccionado: string | null = null
   /** Cuerpo que la cámara persigue (clic lo fija, R o clic al vacío lo suelta). */
   let seguido: string | null = null
-  /** Reloj propio de la rotación, en tiempo de pared escalado (no simulado). */
+  /** Reloj propio de la rotación, en tiempo de pared (segundos reales). */
   let relojRotacion = 0
   let ultimoMs = performance.now()
   const tituloBase = document.title
@@ -274,7 +275,7 @@ export async function montarMotor(
     nucleo.medidor.sumarBytes(centros.byteLength)
 
     // Planetas: solo mover + girar (la geometría y el material no se tocan).
-    if (!pausado) relojRotacion += dtS * VELOCIDAD_ROTACION
+    if (!pausado) relojRotacion += dtS
     visuales.forEach((c, i) => {
       const malla = mallas[i]
       malla.position.set(centros[i * 4], centros[i * 4 + 1], centros[i * 4 + 2])

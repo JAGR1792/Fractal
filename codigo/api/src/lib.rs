@@ -16,6 +16,7 @@
 
 pub mod almacen;
 pub mod binario;
+pub mod distribuido;
 pub mod modelos;
 pub mod rutas;
 pub mod sesion;

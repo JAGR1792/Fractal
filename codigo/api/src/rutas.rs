@@ -7,6 +7,7 @@
 use crate::{
     almacen::Almacen,
     binario::{VERSION_BINARIO, codificar},
+    distribuido,
     modelos::{
         ErrorApi, EstadoSimulacion, InfoSalud, PeticionSimulacion, RespuestaCreacion,
         RespuestaEstados,
@@ -23,7 +24,12 @@ use axum::{
 };
 use fractal_fisica::estado::simular_con;
 use serde::Deserialize;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 use uuid::Uuid;
+
+static SOLICITUDES_TOTALES: AtomicU64 = AtomicU64::new(0);
+static LATENCIA_US_TOTAL: AtomicU64 = AtomicU64::new(0);
 
 /// Error de la API convertido a JSON + status correcto.
 struct FalloApi {
@@ -68,6 +74,7 @@ pub fn crear_app(almacen: Almacen, sesiones: Sesiones) -> Router {
     let estado = EstadoApp { almacen, sesiones };
     Router::new()
         .route("/salud", get(salud))
+        .route("/metrics", get(metricas))
         .route("/api/v1/simulaciones", post(crear_simulacion))
         .route("/api/v1/simulaciones/:id", get(leer_simulacion))
         .route("/api/v1/simulaciones/:id/estados", get(leer_estados))
@@ -75,6 +82,8 @@ pub fn crear_app(almacen: Almacen, sesiones: Sesiones) -> Router {
         .route("/api/v1/sesiones", post(crear_sesion))
         .route("/api/v1/sesiones/:id", patch(actualizar_sesion).delete(cerrar_sesion))
         .route("/api/v1/sesiones/:id/estados", get(leer_sesion))
+        .route("/api/v1/fuerzas/distribuida", post(fuerzas_distribuidas))
+        .layer(axum::middleware::from_fn(medir_solicitud))
         .with_state(estado)
 }
 
@@ -271,4 +280,67 @@ async fn cerrar_sesion(
             mensaje: "sesión no encontrada o caducada".to_string(),
         })
     }
+}
+
+#[derive(serde::Deserialize)]
+struct PeticionFuerzasDistribuidas {
+    cuerpos: Vec<fractal_fisica::cuerpo::Cuerpo>,
+    #[serde(default)]
+    suavizado: f64,
+}
+
+/// `POST /api/v1/fuerzas/distribuida` — calcula aceleraciones distribuyendo por filas.
+async fn fuerzas_distribuidas(
+    Json(peticion): Json<PeticionFuerzasDistribuidas>,
+) -> Result<Json<serde_json::Value>, FalloApi> {
+    let nodos = distribuido::nodos_desde_env("NODOS_TRABAJADORES");
+    let resultado = if let Some(acels) = distribuido::fuerzas_distribuidas(&nodos, &peticion.cuerpos, peticion.suavizado).await {
+        acels
+    } else {
+        // fallback local (paralelo si está disponible)
+        #[cfg(feature = "paralelo")]
+        {
+            fractal_fisica::paralelo::calcular_aceleraciones_suavizadas_paralelo(&peticion.cuerpos, peticion.suavizado)
+        }
+        #[cfg(not(feature = "paralelo"))]
+        {
+            fractal_fisica::gravedad::calcular_aceleraciones_suavizadas(&peticion.cuerpos, peticion.suavizado)
+        }
+    };
+    let datos: Vec<[f64; 3]> = resultado
+        .iter()
+        .map(|v| [v.x, v.y, v.z])
+        .collect();
+    Ok(Json(serde_json::json!({"aceleraciones": datos, "nodos": nodos.len()})))
+}
+
+/// `GET /metrics` — métricas básicas en formato Prometheus.
+async fn metricas() -> String {
+    let total = SOLICITUDES_TOTALES.load(Ordering::Relaxed);
+    let latencia_us = LATENCIA_US_TOTAL.load(Ordering::Relaxed);
+    let promedio_ms = if total == 0 {
+        0.0
+    } else {
+        (latencia_us as f64 / total as f64) / 1000.0
+    };
+    format!(
+        "# HELP fractal_solicitudes_totales Total de solicitudes HTTP\\n\
+         # TYPE fractal_solicitudes_totales counter\\n\
+         fractal_solicitudes_totales {total}\\n\
+         # HELP fractal_latencia_promedio_ms Latencia promedio en ms\\n\
+         # TYPE fractal_latencia_promedio_ms gauge\\n\
+         fractal_latencia_promedio_ms {promedio_ms}\\n"
+    )
+}
+
+/// Middleware que cuenta solicitudes y latencia.
+async fn medir_solicitud(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let inicio = Instant::now();
+    let respuesta = next.run(req).await;
+    SOLICITUDES_TOTALES.fetch_add(1, Ordering::Relaxed);
+    LATENCIA_US_TOTAL.fetch_add(inicio.elapsed().as_micros() as u64, Ordering::Relaxed);
+    respuesta
 }

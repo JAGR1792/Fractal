@@ -41,7 +41,20 @@ pub mod prelude {
     pub use crate::cuerpo::Cuerpo;
     pub use crate::estado::{Estado, simular, simular_con};
     pub use crate::gravedad::{calcular_aceleraciones, calcular_aceleraciones_suavizadas};
+    #[cfg(feature = "paralelo")]
+    pub use crate::gravedad::{
+        calcular_aceleraciones_paralelo, calcular_aceleraciones_suavizadas_paralelo,
+    };
     pub use crate::integrador::{paso_velocity_verlet, paso_velocity_verlet_con};
     pub use crate::metricas::{Diagnostico, diagnosticar, energia_total, momento_total};
     pub use crate::vector::Vec3;
+}
+
+#[cfg(feature = "paralelo")]
+pub mod paralelo {
+    pub use crate::estado::{simular_con_paralelo, simular_paralelo};
+    pub use crate::gravedad::{
+        calcular_aceleraciones_paralelo, calcular_aceleraciones_suavizadas_paralelo,
+    };
+    pub use crate::integrador::{paso_velocity_verlet_con_paralelo, paso_velocity_verlet_paralelo};
 }

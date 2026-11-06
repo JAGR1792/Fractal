@@ -132,6 +132,49 @@ pub fn calcular_aceleraciones_suavizadas(cuerpos: &[Cuerpo], suavizado: f64) -> 
     aceleraciones
 }
 
+/// Versión paralela de [`calcular_aceleraciones`] (feature `paralelo`).
+///
+/// Divide el trabajo por cuerpo (cada hilo calcula la aceleración de un
+/// subconjunto de cuerpos). El resultado es bit-a-bit equivalente salvo
+/// el orden de suma (tolerancia ~1e-15).
+#[cfg(feature = "paralelo")]
+pub fn calcular_aceleraciones_paralelo(cuerpos: &[Cuerpo]) -> Vec<Vec3> {
+    calcular_aceleraciones_suavizadas_paralelo(cuerpos, 0.0)
+}
+
+/// Versión paralela de [`calcular_aceleraciones_suavizadas`] (feature `paralelo`).
+#[cfg(feature = "paralelo")]
+pub fn calcular_aceleraciones_suavizadas_paralelo(
+    cuerpos: &[Cuerpo],
+    suavizado: f64,
+) -> Vec<Vec3> {
+    use rayon::prelude::*;
+    assert!(suavizado >= 0.0 && suavizado.is_finite(), "el suavizado debe ser ≥ 0 y finito");
+    let n = cuerpos.len();
+    let e2 = suavizado * suavizado;
+
+    (0..n)
+        .into_par_iter()
+        .map(|i| {
+            let mut aceleracion = Vec3::cero();
+            for j in 0..n {
+                if i == j {
+                    continue;
+                }
+                let r_ij = cuerpos[j].posicion.restar(&cuerpos[i].posicion);
+                let distancia = r_ij.norma();
+                if distancia < 1.0 && e2 == 0.0 {
+                    continue;
+                }
+                let d2 = distancia * distancia + e2;
+                let factor = G * cuerpos[j].masa / (d2 * d2.sqrt());
+                aceleracion += r_ij.escalar(factor);
+            }
+            aceleracion
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,5 +244,38 @@ mod tests {
     fn suavizado_negativo_es_panico() {
         let cuerpos = vec![Cuerpo::nuevo("a", "A", 1.0, 1.0, Vec3::cero(), Vec3::cero())];
         let _ = calcular_aceleraciones_suavizadas(&cuerpos, -1.0);
+    }
+
+    #[cfg(feature = "paralelo")]
+    #[test]
+    fn paralelo_equivale_a_serial() {
+        let cuerpos = vec![
+            Cuerpo::nuevo("a", "A", 1e30, 1e8, Vec3::cero(), Vec3::cero()),
+            Cuerpo::nuevo("b", "B", 1e24, 1e6, Vec3::new(1e11, 0.0, 0.0), Vec3::new(0.0, 1e4, 0.0)),
+            Cuerpo::nuevo("c", "C", 1e20, 1e5, Vec3::new(0.0, 2e11, 0.0), Vec3::new(1e3, 0.0, 0.0)),
+        ];
+        let serial = calcular_aceleraciones(&cuerpos);
+        let paralelo = calcular_aceleraciones_paralelo(&cuerpos);
+        for (a, b) in serial.iter().zip(paralelo.iter()) {
+            assert!((a.x - b.x).abs() < 1e-12);
+            assert!((a.y - b.y).abs() < 1e-12);
+            assert!((a.z - b.z).abs() < 1e-12);
+        }
+    }
+
+    #[cfg(feature = "paralelo")]
+    #[test]
+    fn paralelo_suavizado_equivale_a_serial() {
+        let cuerpos = vec![
+            Cuerpo::nuevo("a", "A", 1e30, 1e8, Vec3::cero(), Vec3::cero()),
+            Cuerpo::nuevo("b", "B", 1e24, 1e6, Vec3::new(10.0, 0.0, 0.0), Vec3::cero()),
+        ];
+        let serial = calcular_aceleraciones_suavizadas(&cuerpos, 1e6);
+        let paralelo = calcular_aceleraciones_suavizadas_paralelo(&cuerpos, 1e6);
+        for (a, b) in serial.iter().zip(paralelo.iter()) {
+            assert!((a.x - b.x).abs() < 1e-12);
+            assert!((a.y - b.y).abs() < 1e-12);
+            assert!((a.z - b.z).abs() < 1e-12);
+        }
     }
 }

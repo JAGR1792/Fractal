@@ -131,6 +131,42 @@ pub fn simular_con(
     historial
 }
 
+/// Simulación completa en modo paralelo (feature `paralelo`).
+#[cfg(feature = "paralelo")]
+pub fn simular_paralelo(
+    cuerpos: &[Cuerpo],
+    dt: f64,
+    pasos: usize,
+    cada_n_pasos: usize,
+) -> Vec<Estado> {
+    simular_con_paralelo(cuerpos, dt, pasos, cada_n_pasos, 0.0)
+}
+
+/// Simulación completa en modo paralelo con suavizado (feature `paralelo`).
+#[cfg(feature = "paralelo")]
+pub fn simular_con_paralelo(
+    cuerpos: &[Cuerpo],
+    dt: f64,
+    pasos: usize,
+    cada_n_pasos: usize,
+    suavizado: f64,
+) -> Vec<Estado> {
+    use crate::integrador::paso_velocity_verlet_con_paralelo;
+    assert!(cada_n_pasos > 0, "cada_n_pasos debe ser al menos 1");
+
+    let mut estado_actual = cuerpos.to_vec();
+    let mut historial = Vec::with_capacity(pasos / cada_n_pasos + 1);
+    historial.push(Estado::nuevo(0.0, &estado_actual));
+
+    for paso in 1..=pasos {
+        paso_velocity_verlet_con_paralelo(&mut estado_actual, dt, suavizado);
+        if paso % cada_n_pasos == 0 {
+            historial.push(Estado::nuevo(paso as f64 * dt, &estado_actual));
+        }
+    }
+    historial
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,5 +214,30 @@ mod tests {
         let a = simular(&cuerpos, 3600.0, 24, 6);
         let b = simular_con(&cuerpos, 3600.0, 24, 6, 0.0);
         assert_eq!(a, b);
+    }
+
+    #[cfg(feature = "paralelo")]
+    #[test]
+    fn paralelo_equivale_a_serial_simulacion() {
+        let cuerpos = vec![
+            Cuerpo::nuevo("sol", "Sol", 1.989e30, 6.957e8, Vec3::cero(), Vec3::cero()),
+            Cuerpo::nuevo(
+                "t",
+                "T",
+                5.972e24,
+                6.371e6,
+                Vec3::new(1.496e11, 0.0, 0.0),
+                Vec3::new(0.0, 29780.0, 0.0),
+            ),
+        ];
+        let a = simular(&cuerpos, 3600.0, 24, 6);
+        let b = simular_paralelo(&cuerpos, 3600.0, 24, 6);
+        assert_eq!(a.len(), b.len());
+        for (ea, eb) in a.iter().zip(b.iter()) {
+            assert!((ea.tiempo - eb.tiempo).abs() < 1e-9);
+            for (ca, cb) in ea.cuerpos.iter().zip(eb.cuerpos.iter()) {
+                assert!((ca.posicion.x - cb.posicion.x).abs() < 1e-9);
+            }
+        }
     }
 }

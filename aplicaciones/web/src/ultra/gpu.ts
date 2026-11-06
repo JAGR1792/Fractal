@@ -160,7 +160,7 @@ export async function montarUltra(
   const contexto: any = (lienzo as any).getContext('webgpu')
   if (!contexto) throw new Error('sin contexto webgpu')
   const formato: string = nav.gpu.getPreferredCanvasFormat()
-  contexto.configure({ device, format: formato, alphaMode: 'opaque' })
+  contexto.configure({ device, format: formato, alphaMode: 'premultiplied' })
 
   const escenario = await cargarEscenario(urlEscenario).catch(() => null)
   const visuales: CuerpoVisual[] = escenario
@@ -330,7 +330,7 @@ export async function montarUltra(
   const tituloBase = document.title
   const t0 = performance.now()
   let ultimoMs = t0
-  /** Reloj propio de la rotación, en tiempo de pared escalado (no simulado). */
+  /** Reloj propio de la rotación, en tiempo de pared (segundos reales). */
   let relojRotacion = 0
   const radios = visuales.map((c) => c.radioVisual * 1.2)
   // Cuerpo que la cámara persigue (clic lo fija, R o clic al vacío lo suelta).
@@ -486,7 +486,7 @@ export async function montarUltra(
 
     // Rotación propia: reloj de PARED propio (ver `anguloRotacion`), avanzado
     // solo si no está pausado. Se sube cada fotograma.
-    if (!pausado) relojRotacion += (dtMs / 1000) * VELOCIDAD_ROTACION
+    if (!pausado) relojRotacion += dtMs / 1000
     visuales.forEach((c, i) => {
       giros[i] = anguloRotacion(c, relojRotacion)
     })
@@ -494,7 +494,7 @@ export async function montarUltra(
 
     const cod: any = device.createCommandEncoder()
     const paso: any = cod.beginRenderPass({
-      colorAttachments: [{ view: contexto.getCurrentTexture().createView(), loadOp: 'clear', clearValue: { r: 0.02, g: 0.02, b: 0.08, a: 1 }, storeOp: 'store' }],
+      colorAttachments: [{ view: contexto.getCurrentTexture().createView(), loadOp: 'clear', clearValue: { r: 0.02, g: 0.02, b: 0.08, a: 0 }, storeOp: 'store' }],
       depthStencilAttachment: { view: vistaProf, depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' },
     })
     paso.setPipeline(pipePuntos)
