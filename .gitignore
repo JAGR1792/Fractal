@@ -7,3 +7,6 @@ dist/
 .DS_Store
 # Three.js vendorizado: se genera con `npm run prebuild`, no se commitea.
 aplicaciones/web/public/vendor/
+
+.scannerwork/
+target/
