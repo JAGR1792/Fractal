@@ -126,7 +126,7 @@ pub async fn fuerzas_distribuidas(
     for h in handles {
         match h.await {
             Ok((indices, Ok(vals))) => {
-                for (i, a) in indices.into_iter().zip(vals.into_iter()) {
+                for (i, a) in indices.iter().copied().zip(vals) {
                     aceleraciones[i] = a;
                 }
             }
