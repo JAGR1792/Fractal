@@ -46,4 +46,5 @@ jobs:
         with:
           target: 'http://localhost:3000'
           fail_action: false
+          artifact_name: 'zap-scan'
           allow_issue_writing: false
