@@ -3,8 +3,8 @@
 //! Un `Estado` es una fotografía del sistema en un instante de tiempo.
 //! La simulación produce una secuencia de estados.
 
-use crate::cuerpo::Cuerpo;
 use crate::colisiones::fusionar_colisiones;
+use crate::cuerpo::Cuerpo;
 use crate::integrador::paso_velocity_verlet_con;
 
 /// Estado instantáneo del sistema en un tiempo dado.
