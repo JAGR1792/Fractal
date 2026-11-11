@@ -28,6 +28,12 @@ pub const MAX_PASOS: usize = 200_000;
 /// };
 /// assert!(peticion.validar().is_ok());
 /// ```
+/// Suavizado gravitacional recomendado por defecto (m): evita explosiones en
+/// encuentros cercanos sin alterar la dinámica a escala planetaria.
+pub fn default_suavizado() -> f64 {
+    1e6
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeticionSimulacion {
     /// Estado inicial del sistema (masas, posiciones y velocidades en SI).
@@ -39,7 +45,7 @@ pub struct PeticionSimulacion {
     /// Registrar un estado cada N pasos (1 = todos).
     pub cada_n: usize,
     /// Suavizado gravitacional ε en metros (0 = Newton puro).
-    #[serde(default)]
+    #[serde(default = "default_suavizado")]
     pub suavizado: f64,
 }
 
