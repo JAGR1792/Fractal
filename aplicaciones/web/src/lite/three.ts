@@ -255,6 +255,27 @@ export async function montarMotor(
   lienzo.addEventListener('click', alClick)
   window.addEventListener('keydown', alTecla)
 
+  // Rejilla de gravedad (toggle con tecla 'G'): campo vectorial del campo g.
+  const grupoGrid = new THREE.Group()
+  const flechas: { flecha: THREE.ArrowHelper; x: number; z: number }[] = []
+  const PASO_GRID = 2
+  for (let gx = -10; gx <= 10; gx += PASO_GRID) {
+    for (let gz = -10; gz <= 10; gz += PASO_GRID) {
+      const f = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(gx, 0, gz), 1, 0x4488ff, 0.3, 0.2)
+      grupoGrid.add(f)
+      flechas.push({ flecha: f, x: gx, z: gz })
+    }
+  }
+  grupoGrid.visible = false
+  escena.add(grupoGrid)
+  let mostrarGrid = false
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'g' || e.key === 'G') {
+      mostrarGrid = !mostrarGrid
+      grupoGrid.visible = mostrarGrid
+    }
+  })
+
   function cuadro(): void {
     if (!vivo) return
     requestAnimationFrame(cuadro)
@@ -280,6 +301,33 @@ export async function montarMotor(
       malla.position.set(centros[i * 4], centros[i * 4 + 1], centros[i * 4 + 2])
       malla.rotation.y = anguloRotacion(c, relojRotacion)
     })
+
+    // Actualizar rejilla de gravedad (solo si visible).
+    if (mostrarGrid) {
+      for (const { flecha, x, z } of flechas) {
+        let gx = 0, gy = 0, gz = 0
+        for (let i = 0; i < visuales.length; i++) {
+          const cx = centros[i * 4], cy = centros[i * 4 + 1], cz = centros[i * 4 + 2]
+          const dx = cx - x, dy = cy - 0, dz = cz - z
+          const dist2 = dx * dx + dy * dy + dz * dz
+          const dist = Math.sqrt(dist2)
+          if (dist < 0.5) continue
+          const masa = visuales[i].masa
+          const factor = 6.6743e-11 * masa / (dist * dist2)
+          gx += factor * dx
+          gy += factor * dy
+          gz += factor * dz
+        }
+        const mag = Math.hypot(gx, gy, gz)
+        if (mag > 0) {
+          flecha.setDirection(new THREE.Vector3(gx / mag, gy / mag, gz / mag))
+          flecha.setLength(Math.min(Math.log10(mag + 1) * 0.5, 2), 0.3, 0.2)
+          flecha.visible = true
+        } else {
+          flecha.visible = false
+        }
+      }
+    }
 
     // Explosiones por proximidad (radios visuales) con cooldown.
     if (!pausado) {

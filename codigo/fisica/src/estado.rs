@@ -4,6 +4,7 @@
 //! La simulación produce una secuencia de estados.
 
 use crate::cuerpo::Cuerpo;
+use crate::colisiones::fusionar_colisiones;
 use crate::integrador::paso_velocity_verlet_con;
 
 /// Estado instantáneo del sistema en un tiempo dado.
@@ -122,6 +123,10 @@ pub fn simular_con(
 
     for paso in 1..=pasos {
         paso_velocity_verlet_con(&mut estado_actual, dt, suavizado);
+        // Detectar y fusionar colisiones inelásticas (ej.: planeta al Sol).
+        // Si cuerpos quedan fusionados, el número de cuerpos cambia; el historial
+        // registrará el nuevo estado con el cuerpo combinado.
+        fusionar_colisiones(&mut estado_actual);
 
         if paso % cada_n_pasos == 0 {
             historial.push(Estado::nuevo(paso as f64 * dt, &estado_actual));
@@ -160,6 +165,7 @@ pub fn simular_con_paralelo(
 
     for paso in 1..=pasos {
         paso_velocity_verlet_con_paralelo(&mut estado_actual, dt, suavizado);
+        fusionar_colisiones(&mut estado_actual);
         if paso % cada_n_pasos == 0 {
             historial.push(Estado::nuevo(paso as f64 * dt, &estado_actual));
         }

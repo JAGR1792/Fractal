@@ -125,6 +125,13 @@ impl std::ops::Mul<f64> for Vec3 {
     }
 }
 
+impl std::ops::Div<f64> for Vec3 {
+    type Output = Vec3;
+    fn div(self, factor: f64) -> Vec3 {
+        Vec3::new(self.x / factor, self.y / factor, self.z / factor)
+    }
+}
+
 impl std::ops::AddAssign for Vec3 {
     fn add_assign(&mut self, otro: Vec3) {
         self.x += otro.x;

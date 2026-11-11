@@ -27,6 +27,7 @@
 //! assert!(error < 1e-8, "la energía debe conservarse");
 //! ```
 
+pub mod colisiones;
 pub mod constantes;
 pub mod cuerpo;
 pub mod estado;
@@ -38,6 +39,7 @@ pub mod vector;
 /// Re-exportaciones convenientes para uso común.
 pub mod prelude {
     pub use crate::constantes::*;
+    pub use crate::colisiones::fusionar_colisiones;
     pub use crate::cuerpo::Cuerpo;
     pub use crate::estado::{Estado, simular, simular_con};
     pub use crate::gravedad::{calcular_aceleraciones, calcular_aceleraciones_suavizadas};
