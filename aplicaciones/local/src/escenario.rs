@@ -107,17 +107,12 @@ pub fn escala_desde_cuerpos(cuerpos: &[Cuerpo]) -> f64 {
             max_r = r;
         }
     }
-    if max_r < 1.0 {
-        1.0
-    } else {
-        max_r
-    }
+    if max_r < 1.0 { 1.0 } else { max_r }
 }
 
 /// Directorio `datos/escenarios` relativo al crate o al cwd.
 pub fn directorio_escenarios() -> PathBuf {
-    let desde_crate =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../datos/escenarios");
+    let desde_crate = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../datos/escenarios");
     if desde_crate.is_dir() {
         return desde_crate;
     }
@@ -148,11 +143,7 @@ pub fn listar_escenarios() -> Vec<EscenarioMeta> {
                     if esc.id == "tres_cuerpos" {
                         tiene_tres = true;
                     }
-                    metas.push(EscenarioMeta {
-                        id: esc.id,
-                        nombre: esc.nombre,
-                        ruta: Some(ruta),
-                    });
+                    metas.push(EscenarioMeta { id: esc.id, nombre: esc.nombre, ruta: Some(ruta) });
                 }
                 Err(err) => {
                     eprintln!("aviso: no se pudo leer {}: {err}", ruta.display());
@@ -179,9 +170,7 @@ pub fn listar_escenarios() -> Vec<EscenarioMeta> {
             "dos_cuerpos" => 1,
             _ => 10,
         };
-        rank(&a.id)
-            .cmp(&rank(&b.id))
-            .then_with(|| a.nombre.cmp(&b.nombre))
+        rank(&a.id).cmp(&rank(&b.id)).then_with(|| a.nombre.cmp(&b.nombre))
     });
 
     metas
@@ -189,10 +178,10 @@ pub fn listar_escenarios() -> Vec<EscenarioMeta> {
 
 /// Carga un escenario por id (ruta del catálogo o figure-8 embebido).
 pub fn cargar_por_id(id: &str, catalogo: &[EscenarioMeta]) -> Result<EscenarioCargado, String> {
-    if let Some(meta) = catalogo.iter().find(|m| m.id == id) {
-        if let Some(ruta) = &meta.ruta {
-            return Ok(cargar_json(ruta)?);
-        }
+    if let Some(meta) = catalogo.iter().find(|m| m.id == id)
+        && let Some(ruta) = &meta.ruta
+    {
+        return cargar_json(ruta);
     }
     if id == "tres_cuerpos" {
         return Ok(tres_cuerpos_figure8());
@@ -202,10 +191,9 @@ pub fn cargar_por_id(id: &str, catalogo: &[EscenarioMeta]) -> Result<EscenarioCa
 
 /// Carga y valida un fichero de escenario.
 pub fn cargar_json(ruta: &Path) -> Result<EscenarioCargado, String> {
-    let texto = fs::read_to_string(ruta)
-        .map_err(|e| format!("lectura {}: {e}", ruta.display()))?;
-    let raw: EscenarioJson = serde_json::from_str(&texto)
-        .map_err(|e| format!("JSON {}: {e}", ruta.display()))?;
+    let texto = fs::read_to_string(ruta).map_err(|e| format!("lectura {}: {e}", ruta.display()))?;
+    let raw: EscenarioJson =
+        serde_json::from_str(&texto).map_err(|e| format!("JSON {}: {e}", ruta.display()))?;
     if raw.cuerpos.is_empty() {
         return Err(format!("{} no tiene cuerpos", ruta.display()));
     }
@@ -213,10 +201,7 @@ pub fn cargar_json(ruta: &Path) -> Result<EscenarioCargado, String> {
     let mut cuerpos = Vec::with_capacity(raw.cuerpos.len());
     for c in &raw.cuerpos {
         if c.masa <= 0.0 || c.radio <= 0.0 {
-            return Err(format!(
-                "cuerpo '{}' inválido (masa/radio deben ser > 0)",
-                c.id
-            ));
+            return Err(format!("cuerpo '{}' inválido (masa/radio deben ser > 0)", c.id));
         }
         cuerpos.push(Cuerpo::nuevo(
             &c.id,
@@ -229,24 +214,14 @@ pub fn cargar_json(ruta: &Path) -> Result<EscenarioCargado, String> {
     }
 
     let escala = escala_desde_cuerpos(&cuerpos);
-    let dt = raw
-        .parametros
-        .dt
-        .filter(|d| *d > 0.0)
-        .unwrap_or_else(|| {
-            // Heurística: ~1/400 del tiempo característico del par más pesado.
-            let m = cuerpos.iter().map(|c| c.masa).fold(0.0_f64, f64::max);
-            let tau = (escala * escala * escala / (G * m.max(1.0))).sqrt();
-            tau / 400.0
-        });
+    let dt = raw.parametros.dt.filter(|d| *d > 0.0).unwrap_or_else(|| {
+        // Heurística: ~1/400 del tiempo característico del par más pesado.
+        let m = cuerpos.iter().map(|c| c.masa).fold(0.0_f64, f64::max);
+        let tau = (escala * escala * escala / (G * m.max(1.0))).sqrt();
+        tau / 400.0
+    });
 
-    Ok(EscenarioCargado {
-        id: raw.id,
-        nombre: raw.nombre,
-        cuerpos,
-        dt,
-        escala,
-    })
+    Ok(EscenarioCargado { id: raw.id, nombre: raw.nombre, cuerpos, dt, escala })
 }
 
 #[cfg(test)]
