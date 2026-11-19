@@ -1,0 +1,65 @@
+{
+  "id": "tres_cuerpos",
+  "nombre": "Figure-8 Moore (periódica)",
+  "descripcion": "Coreografía periódica de Chenciner–Montgomery / Moore escalada a SI. Tres masas iguales trazan un 8. Comparar con Figure-8 IPB (V.1.A) del catálogo Observable.",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "marte",
+      "nombre": "A · Marte",
+      "masa": 1e+24,
+      "radio": 40000000.0,
+      "posicion": [
+        970004360.0,
+        -243087530.0,
+        0.0
+      ],
+      "velocidad": [
+        120.44216784706076,
+        111.70024497763666,
+        0.0
+      ]
+    },
+    {
+      "id": "jupiter",
+      "nombre": "B · Júpiter",
+      "masa": 1e+24,
+      "radio": 46000000.0,
+      "posicion": [
+        -970004360.0,
+        243087530.0,
+        0.0
+      ],
+      "velocidad": [
+        120.44216784706076,
+        111.70024497763666,
+        0.0
+      ]
+    },
+    {
+      "id": "neptuno",
+      "nombre": "C · Neptuno",
+      "masa": 1e+24,
+      "radio": 40000000.0,
+      "posicion": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        -240.88433569412152,
+        -223.40048995527331,
+        0.0
+      ]
+    }
+  ],
+  "parametros": {
+    "dt": 9676.919913796144,
+    "pasos": 4000,
+    "nota": "dt ≈ τ/400 con τ = √(L³/(G M)), L=1e9 m, M=1e24 kg"
+  }
+}

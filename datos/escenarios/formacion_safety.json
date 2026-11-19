@@ -1,0 +1,39 @@
+{
+  "id": "formacion_safety",
+  "nombre": "Formación · safety ellipse",
+  "descripcion": "Líder en LEO y seguidor desplazado (~ safety ellipse estilo GMAT). Vista relativa en el sandbox.",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "tierra",
+      "nombre": "Tierra",
+      "masa": 5.972e24,
+      "radio": 6.371e6,
+      "posicion": [0.0, 0.0, 0.0],
+      "velocidad": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "leader",
+      "nombre": "Líder",
+      "masa": 800.0,
+      "radio": 4.0e5,
+      "posicion": [6.778137e6, 0.0, 0.0],
+      "velocidad": [0.0, 7668.6, 0.0]
+    },
+    {
+      "id": "follower",
+      "nombre": "Seguidor",
+      "masa": 600.0,
+      "radio": 3.5e5,
+      "posicion": [6.778137e6, 2500.0, 800.0],
+      "velocidad": [-2.8, 7668.6, 0.4]
+    }
+  ],
+  "parametros": {
+    "dt": 2.0
+  }
+}

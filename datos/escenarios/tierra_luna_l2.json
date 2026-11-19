@@ -1,0 +1,40 @@
+{
+  "id": "tierra_luna_l2",
+  "nombre": "Tierra–Luna · cerca L2",
+  "descripcion": "Tierra, Luna y una sonda cerca del L2 selenocéntrico aproximado (demo educativa, no CR3BP de alta fidelidad).",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "tierra",
+      "nombre": "Tierra",
+      "masa": 5.972e24,
+      "radio": 6.371e6,
+      "posicion": [0.0, 0.0, 0.0],
+      "velocidad": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "luna",
+      "nombre": "Luna",
+      "masa": 7.342e22,
+      "radio": 1.737e6,
+      "posicion": [3.844e8, 0.0, 0.0],
+      "velocidad": [0.0, 1022.0, 0.0]
+    },
+    {
+      "id": "sonda",
+      "nombre": "Sonda L2",
+      "masa": 200.0,
+      "radio": 2.0e5,
+      "posicion": [4.448e8, 0.0, 0.0],
+      "velocidad": [0.0, 850.0, 0.0]
+    }
+  ],
+  "parametros": {
+    "dt": 60.0,
+    "nota": "L2 ≈ 61 500 km más allá de la Luna; condiciones aproximadas"
+  }
+}

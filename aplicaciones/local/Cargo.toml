@@ -1,0 +1,19 @@
+[package]
+name = "fractal-local"
+version = "0.1.0"
+edition = "2024"
+description = "Aplicación de escritorio Fractal (egui) — física in-process, sin backend web"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "fractal-local"
+path = "src/main.rs"
+
+[dependencies]
+eframe = { version = "0.31", default-features = true, features = ["default_fonts", "glow"] }
+egui = "0.31"
+fractal-fisica = { path = "../../codigo/fisica" }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

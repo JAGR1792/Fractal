@@ -1,0 +1,67 @@
+{
+  "id": "orbit_dragonfly",
+  "nombre": "Libélula (II.4.A)",
+  "descripcion": "Órbita periódica «Dragonfly» — período largo, estela densa. Catálogo planar de tres cuerpos (Observable/@rreusser).",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "venus",
+      "nombre": "A · Venus",
+      "masa": 1e+24,
+      "radio": 40000000.0,
+      "posicion": [
+        -1000000000.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        20.818607758940267,
+        152.12381761073354,
+        0.0
+      ]
+    },
+    {
+      "id": "tierra",
+      "nombre": "B · Tierra",
+      "masa": 1e+24,
+      "radio": 44000000.0,
+      "posicion": [
+        1000000000.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        20.818607758940267,
+        152.12381761073354,
+        0.0
+      ]
+    },
+    {
+      "id": "marte",
+      "nombre": "C · Marte",
+      "masa": 1e+24,
+      "radio": 40000000.0,
+      "posicion": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        -41.637215517880534,
+        -304.2476352214671,
+        0.0
+      ]
+    }
+  ],
+  "parametros": {
+    "dt": 102925.35560260122,
+    "pasos": 800,
+    "periodo_natural": 21.272338,
+    "ref": "II.4.A",
+    "nota": "Escalado SI L=1e9 m, M=1e24 kg, G SI. Fuente: Observable @rreusser / IPB II.4.A. G=m=1 en unidades naturales."
+  }
+}

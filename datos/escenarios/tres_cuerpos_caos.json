@@ -1,0 +1,65 @@
+{
+  "id": "tres_cuerpos_caos",
+  "nombre": "Tres cuerpos (caos)",
+  "descripcion": "Figure-8 con masas desiguales y perturbación ~2 %. Caos acotado (sensible a CI) sin eyección inmediata del pitagórico 3-4-5. Texturas: marte/jupiter/neptuno.",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "marte",
+      "nombre": "A · Marte",
+      "masa": 1.15e+24,
+      "radio": 36000000.0,
+      "posicion": [
+        979704403.6,
+        -243087530.0,
+        0.0
+      ],
+      "velocidad": [
+        122.85101120400198,
+        109.46624007808393,
+        0.0
+      ]
+    },
+    {
+      "id": "jupiter",
+      "nombre": "B · Júpiter",
+      "masa": 9e+23,
+      "radio": 46000000.0,
+      "posicion": [
+        -970004360.0,
+        240656654.7,
+        0.0
+      ],
+      "velocidad": [
+        116.82890281164893,
+        115.05125232696577,
+        0.0
+      ]
+    },
+    {
+      "id": "neptuno",
+      "nombre": "C · Neptuno",
+      "masa": 9.5e+23,
+      "radio": 40000000.0,
+      "posicion": [
+        20000000.0,
+        10000000.0,
+        0.0
+      ],
+      "velocidad": [
+        -243.29317905106274,
+        -221.16648505572059,
+        0.0
+      ]
+    }
+  ],
+  "parametros": {
+    "dt": 4838.459956898072,
+    "pasos": 50000,
+    "nota": "Perturbación del figure-8; dt fino. Ids = texturas en public/texturas/"
+  }
+}

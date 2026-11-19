@@ -1,0 +1,67 @@
+{
+  "id": "orbit_yarn",
+  "nombre": "Madeja / Yarn (VI.2.A)",
+  "descripcion": "Familia Yarn: trayectorias que se enrollan como hilo. Buena para mostrar complejidad de la estela en 2D y 3D.",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "saturno",
+      "nombre": "A · Saturno",
+      "masa": 1e+24,
+      "radio": 40000000.0,
+      "posicion": [
+        -1000000000.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        119.9878174401992,
+        102.32078066372831,
+        0.0
+      ]
+    },
+    {
+      "id": "jupiter",
+      "nombre": "B · Júpiter",
+      "masa": 1e+24,
+      "radio": 44000000.0,
+      "posicion": [
+        1000000000.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        119.9878174401992,
+        102.32078066372831,
+        0.0
+      ]
+    },
+    {
+      "id": "marte",
+      "nombre": "C · Marte",
+      "masa": 1e+24,
+      "radio": 40000000.0,
+      "posicion": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        -239.9756348803984,
+        -204.64156132745663,
+        0.0
+      ]
+    }
+  ],
+  "parametros": {
+    "dt": 72065.5031667867,
+    "pasos": 800,
+    "periodo_natural": 14.894306,
+    "ref": "VI.2.A",
+    "nota": "Escalado SI L=1e9 m, M=1e24 kg, G SI. Fuente: Observable @rreusser / IPB VI.2.A. G=m=1 en unidades naturales."
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "id": "orbit_broucke",
+  "nombre": "Broucke A1",
+  "descripcion": "Solución clásica de Broucke (1975): masas iguales, momento angular no nulo, configuración colineal inicial. Catálogo IPB / Observable.",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "marte",
+      "nombre": "A · Marte",
+      "masa": 1e+24,
+      "radio": 40000000.0,
+      "posicion": [
+        -989262004.3,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        0.0,
+        495.2310331118604,
+        0.0
+      ]
+    },
+    {
+      "id": "jupiter",
+      "nombre": "B · Júpiter",
+      "masa": 1e+24,
+      "radio": 44000000.0,
+      "posicion": [
+        2209617724.1,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        0.0,
+        49.351156024257705,
+        0.0
+      ]
+    },
+    {
+      "id": "neptuno",
+      "nombre": "C · Neptuno",
+      "masa": 1e+24,
+      "radio": 40000000.0,
+      "posicion": [
+        -1220355719.6999998,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        0.0,
+        -544.5821891619528,
+        0.0
+      ]
+    }
+  ],
+  "parametros": {
+    "dt": 30401.07450116141,
+    "pasos": 800,
+    "periodo_natural": 6.283213,
+    "ref": "Broucke A 1",
+    "nota": "Escalado SI L=1e9 m, M=1e24 kg, G SI. Fuente: Observable @rreusser / IPB Broucke A 1. G=m=1 en unidades naturales."
+  }
+}
