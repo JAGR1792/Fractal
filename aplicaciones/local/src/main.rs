@@ -4,6 +4,7 @@
 //! Modos 2D (defecto) y 3D, malla que sigue al sistema, sandbox de masas/velocidades.
 
 mod escenario;
+mod mision;
 mod texturas;
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
@@ -13,6 +14,7 @@ use escenario::{
     EscenarioCargado, EscenarioMeta, TrayectoriaPeriodica, geometria_robusta, geometria_sistema,
     muestrear_trayectoria,
 };
+use mision::EstadoMision;
 use texturas::{CatalogoTexturas, color_planeta};
 
 fn main() -> eframe::Result {
@@ -115,6 +117,8 @@ struct AppFractal {
     span_tope: f64,
     /// Se activó pausa automática por eyección / disolución.
     pausa_por_eyeccion: bool,
+    /// Panel de misión (burns, fuerzas, ground track).
+    mision: EstadoMision,
 }
 
 impl AppFractal {
@@ -170,6 +174,7 @@ impl AppFractal {
             fisica_real: false,
             span_tope: span.max(esc.escala) * 10.0,
             pausa_por_eyeccion: false,
+            mision: EstadoMision::default(),
         }
     }
 
@@ -195,6 +200,20 @@ impl AppFractal {
         self.fase_orbita = 0.0;
         self.fisica_real = false;
         self.pausa_por_eyeccion = false;
+        self.mision = EstadoMision::default();
+        // Escenarios de misión: auto-selecciona el vehículo y enciende track.
+        if matches!(
+            self.escenario_id.as_str(),
+            "leo_hohmann" | "formacion_safety" | "tierra_luna_l2" | "dos_cuerpos"
+        ) {
+            self.mision.mostrar_ground_track = true;
+            if let Some((_, veh)) = EstadoMision::indices(&self.cuerpos, None) {
+                self.seleccionado = Some(veh);
+            }
+            if self.escenario_id == "leo_hohmann" {
+                self.mision.modelo.j2 = true;
+            }
+        }
         if periodica {
             self.mostrar_malla = false;
         }
@@ -278,12 +297,15 @@ impl AppFractal {
             // dt adaptativo: si alguien ya va muy rápido, no “teletransportar”.
             let vmax = self.cuerpos.iter().map(|c| c.velocidad.norma()).fold(0.0_f64, f64::max);
             let dt = if vmax > 5.0e4 { self.dt * (5.0e4 / vmax).clamp(0.02, 1.0) } else { self.dt };
+            let modelo = self.mision.modelo;
+            let integrador = self.mision.integrador;
             for _ in 0..pasos {
-                paso_velocity_verlet(&mut self.cuerpos, dt);
+                paso(&mut self.cuerpos, dt, &modelo, integrador);
                 self.tiempo += dt;
             }
         }
         self.registrar_estela();
+        self.mision.registrar_track(&self.cuerpos, self.seleccionado, self.tiempo);
         self.actualizar_span_suave();
     }
 
@@ -497,7 +519,16 @@ impl eframe::App for AppFractal {
             });
         });
 
-        egui::SidePanel::right("sandbox").default_width(260.0).resizable(true).show(ctx, |ui| {
+        egui::SidePanel::right("sandbox").default_width(280.0).resizable(true).show(ctx, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+            mision::ui_panel_mision(
+                ui,
+                &mut self.mision,
+                &mut self.cuerpos,
+                self.seleccionado,
+                self.dt,
+            );
+            ui.separator();
             ui.heading("Sandbox");
             ui.label("Clic en un cuerpo para editar masa y velocidad en vivo.");
             ui.separator();
@@ -587,6 +618,7 @@ impl eframe::App for AppFractal {
             }
             ui.add_space(8.0);
             ui.weak("Atajos: Espacio pausa · G malla · R reiniciar · 2/3 vista · [ ] escenario · F cámara · P presentación · 1 cenital · Shift+2/3 oblicua/perfil · O orbitar");
+            }); // ScrollArea
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -902,15 +934,22 @@ impl AppFractal {
             );
         }
 
+        if let Some(track_rect) = mision::rect_ground_track(rect, self.mision.mostrar_ground_track)
+        {
+            mision::fondo_track(painter, track_rect);
+            mision::dibujar_ground_track(painter, track_rect.shrink(14.0), &self.mision.track);
+        }
+
         let modo = match self.modo {
             ModoVista::DosD => "2D",
             ModoVista::TresD => "3D · pozo Φ",
         };
+        let integ = self.mision.integrador.etiqueta();
         painter.text(
             rect.left_bottom() + Vec2::new(12.0, -14.0),
             egui::Align2::LEFT_BOTTOM,
             format!(
-                "{modo} · {} · P presentación · G pozo · R reiniciar · [ ] órbita",
+                "{modo} · {} · {integ} · P presentación · G pozo · R reiniciar · [ ] órbita",
                 self.preset_camara.etiqueta()
             ),
             egui::FontId::proportional(12.0),

@@ -342,7 +342,10 @@ pub fn listar_escenarios() -> Vec<EscenarioMeta> {
             "orbit_broucke" => 7,
             "tres_cuerpos_caos" => 8,
             "dos_cuerpos" => 9,
-            "sistema_solar" => 10,
+            "leo_hohmann" => 10,
+            "formacion_safety" => 11,
+            "tierra_luna_l2" => 12,
+            "sistema_solar" => 13,
             _ => 20,
         };
         rank(&a.id).cmp(&rank(&b.id)).then_with(|| a.nombre.cmp(&b.nombre))
@@ -429,7 +432,7 @@ pub fn muestrear_trayectoria(tray: &TrayectoriaPeriodica, fase: f64, cuerpos: &m
     };
     let tau = tray.periodo_si / tray.periodo_natural.max(1e-12);
     let n_c = cuerpos.len().min(3);
-    for i in 0..n_c {
+    for (i, cuerpo) in cuerpos.iter_mut().enumerate().take(n_c) {
         let (x0, y0) = a.xy[i];
         let (x1, y1) = b.xy[i];
         let x = x0 + (x1 - x0) * u;
@@ -437,8 +440,8 @@ pub fn muestrear_trayectoria(tray: &TrayectoriaPeriodica, fase: f64, cuerpos: &m
         // v ≈ Δx / Δt_si
         let vx = (x1 - x0) / (dt * tau);
         let vy = (y1 - y0) / (dt * tau);
-        cuerpos[i].posicion = Vec3::new(x, y, 0.0);
-        cuerpos[i].velocidad = Vec3::new(vx, vy, 0.0);
+        cuerpo.posicion = Vec3::new(x, y, 0.0);
+        cuerpo.velocidad = Vec3::new(vx, vy, 0.0);
     }
 }
 

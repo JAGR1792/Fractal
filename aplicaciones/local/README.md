@@ -6,16 +6,14 @@ Aplicación de escritorio con **egui/eframe**. La física (`fractal-fisica`) cor
 ## Qué incluye
 
 - Escenarios desde `datos/escenarios/*.json`:
-  - **Tres cuerpos (caos)** — pitagórico 3-4-5 (demo docente)
-  - **Figure-8 (periódica)** — Chenciner–Montgomery
+  - **Tres cuerpos (caos)** / **Figure-8** y órbitas periódicas
   - **Tierra-Luna**, **Sistema Solar**
-- Vista **2D** (defecto) y **3D** (perspectiva + texturas si hay en
-  `aplicaciones/web/public/texturas/`)
-- Malla gravitatoria que **sigue y se reescala** con el span del sistema
-  (baricentro)
-- Sandbox lateral: seleccionar cuerpo, editar **masa** y **vx/vy/vz** en vivo
-- Cámara: zoom (rueda), pan (2D) / órbita (3D), reset (`F` / doble clic)
-- Controles: pausa, velocidad, toggle de malla, reinicio
+  - **LEO · Hohmann**, **Formación**, **Tierra–Luna L2** (misión)
+- Vista **2D** (defecto) y **3D** (pozo Φ + texturas reales)
+- Panel **Misión** (estilo GMAT-lite): burns VNB, Hohmann, targeting de
+  apoapsis, capas Newton/J₂, integrador Verlet/RK4, ground track, eclipse
+- Sandbox: masa y **vx/vy/vz** en vivo
+- Cámara: zoom, pan / órbita 3D, presets cenital/oblicua/perfil
 - Atajos: `Espacio`, `G`, `R`, `F`, `2`/`3` (vista)
 
 ## Requisitos

@@ -6,33 +6,22 @@
 //! * [`cuerpo`] — Cuerpo celeste
 //! * [`constantes`] — G, UA, masas y radios
 //! * [`gravedad`] — cálculo de aceleraciones O(N²)
-//! * [`integrador`] — Velocity Verlet
+//! * [`fuerzas`] — capas Newton / J₂
+//! * [`integrador`] — Velocity Verlet y RK4
+//! * [`maniobra`] — burns impulsivos y Hohmann
+//! * [`orbital`] — elementos, ground track, eclipse
 //! * [`estado`] — simulación y snapshots
 //! * [`metricas`] — energía, momento, diagnósticos
-//!
-//! # Ejemplo rápido
-//!
-//! ```rust
-//! use fractal_fisica::prelude::*;
-//!
-//! let mut cuerpos = vec![
-//!     Cuerpo::nuevo("sol", "Sol", MASA_SOL, RADIO_SOL, Vec3::cero(), Vec3::cero()),
-//!     Cuerpo::nuevo("t", "T", 5.972e24, 6.371e6,
-//!         Vec3::new(UA, 0.0, 0.0), Vec3::new(0.0, 29780.0, 0.0)),
-//! ];
-//! let e_inicial = energia_total(&cuerpos);
-//! let historial = simular(&cuerpos, 3600.0, 24, 6);
-//! let e_final = energia_total(&historial.last().unwrap().cuerpos);
-//! let error = (e_final - e_inicial).abs() / e_inicial.abs();
-//! assert!(error < 1e-8, "la energía debe conservarse");
-//! ```
 
 pub mod constantes;
 pub mod cuerpo;
 pub mod estado;
+pub mod fuerzas;
 pub mod gravedad;
 pub mod integrador;
+pub mod maniobra;
 pub mod metricas;
+pub mod orbital;
 pub mod vector;
 
 /// Re-exportaciones convenientes para uso común.
@@ -40,8 +29,16 @@ pub mod prelude {
     pub use crate::constantes::*;
     pub use crate::cuerpo::Cuerpo;
     pub use crate::estado::{Estado, simular};
+    pub use crate::fuerzas::{ModeloFuerzas, calcular_aceleraciones_modelo};
     pub use crate::gravedad::calcular_aceleraciones;
-    pub use crate::integrador::paso_velocity_verlet;
+    pub use crate::integrador::{
+        Integrador, paso, paso_con_modelo, paso_rk4, paso_velocity_verlet,
+    };
+    pub use crate::maniobra::{EjeBurn, Hohmann, burn_impulsivo_vnb, target_apoapsis_dv};
     pub use crate::metricas::{Diagnostico, diagnosticar, energia_total, momento_total};
+    pub use crate::orbital::{
+        ElementosKepler, Iluminacion, LatLon, OMEGA_TIERRA, elementos_kepler, ground_track,
+        iluminacion_satelite,
+    };
     pub use crate::vector::Vec3;
 }

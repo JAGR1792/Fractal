@@ -1,0 +1,32 @@
+{
+  "id": "leo_hohmann",
+  "nombre": "LEO · Hohmann",
+  "descripcion": "Satélite en LEO (~400 km). Usa el panel Misión para burns VNB / Hohmann hacia una órbita más alta.",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "tierra",
+      "nombre": "Tierra",
+      "masa": 5.972e24,
+      "radio": 6.371e6,
+      "posicion": [0.0, 0.0, 0.0],
+      "velocidad": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "sat",
+      "nombre": "Sat LEO",
+      "masa": 500.0,
+      "radio": 5.0e5,
+      "posicion": [6.778137e6, 0.0, 0.0],
+      "velocidad": [0.0, 7668.6, 0.0]
+    }
+  ],
+  "parametros": {
+    "dt": 5.0,
+    "nota": "Órbita circular ~400 km; v≈7.67 km/s"
+  }
+}
