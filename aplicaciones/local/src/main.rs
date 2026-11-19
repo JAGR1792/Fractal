@@ -81,7 +81,6 @@ impl AppFractal {
             }
         }
     }
-
 }
 
 impl eframe::App for AppFractal {
@@ -97,10 +96,7 @@ impl eframe::App for AppFractal {
             ui.horizontal(|ui| {
                 ui.heading("Fractal Local");
                 ui.separator();
-                if ui
-                    .button(if self.pausado { "▶ Continuar" } else { "⏸ Pausar" })
-                    .clicked()
-                {
+                if ui.button(if self.pausado { "▶ Continuar" } else { "⏸ Pausar" }).clicked() {
                     self.pausado = !self.pausado;
                 }
                 if ui.button("↺ Reiniciar").clicked() {
@@ -118,8 +114,7 @@ impl eframe::App for AppFractal {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let (respuesta, painter) =
-                ui.allocate_painter(ui.available_size(), Sense::hover());
+            let (respuesta, painter) = ui.allocate_painter(ui.available_size(), Sense::hover());
             let rect = respuesta.rect;
             self.dibujar_escena(&painter, rect);
         });
@@ -163,19 +158,13 @@ impl AppFractal {
                 continue;
             }
             let color = self.colores[i % self.colores.len()].gamma_multiply(0.55);
-            let puntos: Vec<Pos2> = estela
-                .iter()
-                .map(|p| self.proyectar(*p, rect))
-                .collect();
+            let puntos: Vec<Pos2> = estela.iter().map(|p| self.proyectar(*p, rect)).collect();
             painter.add(egui::Shape::line(puntos, Stroke::new(1.5_f32, color)));
         }
 
         // Cuerpos
         for (i, c) in self.cuerpos.iter().enumerate() {
-            let centro = self.proyectar(
-                Pos2::new(c.posicion.x as f32, c.posicion.y as f32),
-                rect,
-            );
+            let centro = self.proyectar(Pos2::new(c.posicion.x as f32, c.posicion.y as f32), rect);
             let radio_px = (rect.width().min(rect.height()) * 0.018).clamp(6.0, 18.0);
             let color = self.colores[i % self.colores.len()];
             painter.circle_filled(centro, radio_px, color);
