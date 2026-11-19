@@ -1,0 +1,41 @@
+{
+  "id": "tres_cuerpos",
+  "nombre": "Figure-8 (tres cuerpos)",
+  "descripcion": "Coreografia periodica de Chenciner–Montgomery escalada a unidades SI. Tres masas iguales trazan un 8.",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "a",
+      "nombre": "A",
+      "masa": 1.0e24,
+      "radio": 4.0e7,
+      "posicion": [970004360.0, -243087530.0, 0.0],
+      "velocidad": [120.44216784706076, 111.70024497763666, 0.0]
+    },
+    {
+      "id": "b",
+      "nombre": "B",
+      "masa": 1.0e24,
+      "radio": 4.0e7,
+      "posicion": [-970004360.0, 243087530.0, 0.0],
+      "velocidad": [120.44216784706076, 111.70024497763666, 0.0]
+    },
+    {
+      "id": "c",
+      "nombre": "C",
+      "masa": 1.0e24,
+      "radio": 4.0e7,
+      "posicion": [0.0, 0.0, 0.0],
+      "velocidad": [-240.88433569412152, -223.40048995527331, 0.0]
+    }
+  ],
+  "parametros": {
+    "dt": 9676.919913796144,
+    "pasos": 4000,
+    "nota": "dt ≈ τ/400 con τ = √(L³/(G M)), L=1e9 m, M=1e24 kg"
+  }
+}

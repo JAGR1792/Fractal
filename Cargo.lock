@@ -1248,6 +1248,8 @@ dependencies = [
  "eframe",
  "egui",
  "fractal-fisica",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
