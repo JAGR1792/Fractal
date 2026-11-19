@@ -4,6 +4,7 @@
 //! Modos 2D (defecto) y 3D, malla que sigue al sistema, sandbox de masas/velocidades.
 
 mod escenario;
+mod fondo;
 mod mision;
 mod texturas;
 
@@ -119,6 +120,10 @@ struct AppFractal {
     pausa_por_eyeccion: bool,
     /// Panel de misión (burns, fuerzas, ground track).
     mision: EstadoMision,
+    /// Distancia de cámara 3D (órbita); menor = más cerca.
+    distancia_camara: f32,
+    /// Seguir al cuerpo seleccionado con la cámara.
+    seguir_seleccion: bool,
 }
 
 impl AppFractal {
@@ -176,6 +181,8 @@ impl AppFractal {
             span_tope: span.max(esc.escala) * 10.0,
             pausa_por_eyeccion: false,
             mision: EstadoMision::default(),
+            distancia_camara: 2.8,
+            seguir_seleccion: false,
         }
     }
 
@@ -191,6 +198,8 @@ impl AppFractal {
         self.escala = esc.escala;
         self.zoom = 1.0;
         self.pan = Vec2::ZERO;
+        self.distancia_camara = 2.8;
+        self.seguir_seleccion = false;
         self.seleccionado = None;
         self.span_suave = span.max(esc.escala);
         self.span_tope = self.span_suave * 10.0;
@@ -378,15 +387,41 @@ impl AppFractal {
         }
     }
 
-    /// Centro de cámara: núcleo ligado (no el CM arrastrado por eyecciones).
+    /// Centro de cámara: selección, o núcleo ligado (ignora eyecciones).
     fn centro_vista(&self) -> Vec3 {
+        if self.seguir_seleccion
+            && let Some(i) = self.seleccionado
+            && let Some(c) = self.cuerpos.get(i)
+            && !c.es_escombro()
+        {
+            return c.posicion;
+        }
         geometria_robusta(&self.cuerpos).0
     }
 
     fn reset_camara(&mut self) {
         self.zoom = 1.0;
         self.pan = Vec2::ZERO;
+        self.distancia_camara = 2.8;
+        self.seguir_seleccion = false;
         self.aplicar_preset_camara(self.preset_camara);
+    }
+
+    /// Encuadra el sistema (o la selección) con un zoom cómodo.
+    fn encuadrar(&mut self) {
+        self.pan = Vec2::ZERO;
+        if self.seleccionado.is_some() {
+            self.seguir_seleccion = true;
+            self.zoom = (self.zoom.max(1.0) * 2.5).clamp(1.5, 80.0);
+            self.distancia_camara = 1.6;
+        } else {
+            self.seguir_seleccion = false;
+            self.zoom = 1.0;
+            self.distancia_camara = 2.8;
+        }
+        if self.modo == ModoVista::TresD && self.preset_camara == PresetCamara::Cenital {
+            self.aplicar_preset_camara(PresetCamara::Oblicua);
+        }
     }
 
     /// Semiextensión usada por proyección y malla (sigue al sistema).
@@ -485,11 +520,28 @@ impl eframe::App for AppFractal {
                 ui.checkbox(&mut self.mostrar_malla, "Pozo gravitatorio")
                     .on_hover_text("2D: sábana · 3D: tejido/curvatura (potencial Φ)");
                 ui.checkbox(&mut self.auto_camara, "Auto-cámara")
-                    .on_hover_text("Sigue al núcleo ligado; ignora eyecciones lejanas");
+                    .on_hover_text("Recentra al núcleo; se apaga al hacer zoom/pan manual");
+                ui.checkbox(&mut self.seguir_seleccion, "Seguir selección")
+                    .on_hover_text("La cámara mira al cuerpo seleccionado");
                 ui.checkbox(&mut self.modo_presentacion, "Presentación")
                     .on_hover_text("Estelas largas con fade — figuras del catálogo periódico");
                 ui.checkbox(&mut self.orbitar_camara, "Orbitar")
                     .on_hover_text("Gira la cámara 3D despacio (útil en proyección)");
+                ui.add(
+                    egui::Slider::new(&mut self.zoom, 0.02..=250.0)
+                        .logarithmic(true)
+                        .text("Zoom"),
+                );
+                if self.modo == ModoVista::TresD {
+                    ui.add(
+                        egui::Slider::new(&mut self.distancia_camara, 0.55..=8.0)
+                            .text("Dist. cámara"),
+                    );
+                }
+                if ui.button("⊡ Encuadrar").on_hover_text("Doble clic · enfoca sistema o selección").clicked()
+                {
+                    self.encuadrar();
+                }
                 if self.trayectoria.is_some() {
                     let antes = self.fisica_real;
                     ui.checkbox(&mut self.fisica_real, "Física real ⚠")
@@ -514,7 +566,10 @@ impl eframe::App for AppFractal {
                 }
                 let e = energia_total(&self.cuerpos);
                 ui.monospace(format!("E = {:.6e} J", e));
-                ui.monospace(format!("zoom {:.2}×", self.zoom));
+                ui.monospace(format!(
+                    "zoom {:.2}× · dist {:.2}",
+                    self.zoom, self.distancia_camara
+                ));
                 let (n_real, n_tex) = self.texturas.conteo();
                 if n_tex > 0 {
                     let col = if n_real == n_tex {
@@ -636,7 +691,7 @@ impl eframe::App for AppFractal {
                 );
             }
             ui.add_space(8.0);
-            ui.weak("Atajos: Espacio pausa · G malla · R reiniciar · 2/3 vista · [ ] escenario · F cámara · P presentación · 1 cenital · Shift+2/3 oblicua/perfil · O orbitar");
+            ui.weak("Atajos: rueda zoom · Alt+rueda dist · Shift/medio pan 3D · C encuadrar · +/- zoom · Espacio pausa · G malla · R reiniciar · F reset cam · P presentación · O orbitar");
             }); // ScrollArea
         });
 
@@ -645,41 +700,61 @@ impl eframe::App for AppFractal {
                 ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
             let rect = respuesta.rect;
 
-            // Zoom con rueda.
-            let scroll = respuesta.hover_pos().and_then(|_| {
-                ui.input(|i| {
-                    let d = i.smooth_scroll_delta.y;
-                    if d.abs() > 0.0 { Some(d) } else { None }
-                })
+            // Zoom exponencial hacia el cursor (rueda). Alt = distancia 3D.
+            let (scroll, alt) = ui.input(|i| {
+                let d = i.smooth_scroll_delta.y;
+                (d, i.modifiers.alt)
             });
-            if let (Some(delta), Some(pos)) = (scroll, respuesta.hover_pos()) {
-                let antes = self.zoom;
-                let factor = (1.0 + delta * 0.0015).clamp(0.85, 1.15);
-                self.zoom = (self.zoom * factor).clamp(0.05, 40.0);
-                let origen = rect.center() + self.pan;
-                let offset = pos - origen;
-                let ratio = self.zoom / antes;
-                self.pan += offset * (1.0 - ratio);
+            if respuesta.hovered() && scroll.abs() > 0.0 {
+                if alt && self.modo == ModoVista::TresD {
+                    // Acercar/alejar la órbita de cámara.
+                    let f = (1.0 - scroll * 0.0018).clamp(0.82, 1.22);
+                    self.distancia_camara = (self.distancia_camara * f).clamp(0.55, 8.0);
+                } else if let Some(pos) = respuesta.hover_pos() {
+                    let antes = self.zoom;
+                    // Exponencial: un “notch” de rueda ≈ ×1.12
+                    let pasos = (scroll / 40.0).clamp(-4.0, 4.0);
+                    self.zoom = (self.zoom * 1.12f32.powf(pasos)).clamp(0.02, 250.0);
+                    let origen = rect.center() + self.pan;
+                    let offset = pos - origen;
+                    let ratio = self.zoom / antes.max(1e-4);
+                    self.pan += offset * (1.0 - ratio);
+                    // Al hacer zoom agresivo, aflojar auto-cámara para no pelear.
+                    if (self.zoom - antes).abs() / antes > 0.05 {
+                        self.auto_camara = false;
+                    }
+                }
             }
 
             match self.modo {
                 ModoVista::DosD => {
-                    if respuesta.dragged_by(egui::PointerButton::Primary) {
+                    if respuesta.dragged_by(egui::PointerButton::Primary)
+                        || respuesta.dragged_by(egui::PointerButton::Middle)
+                    {
                         self.pan += respuesta.drag_delta();
+                        self.auto_camara = false;
                     }
                 }
                 ModoVista::TresD => {
-                    // Órbita: arrastre primario o secundario.
-                    if respuesta.dragged() {
+                    let shift = ui.input(|i| i.modifiers.shift);
+                    if (respuesta.dragged_by(egui::PointerButton::Primary) && shift)
+                        || respuesta.dragged_by(egui::PointerButton::Middle)
+                    {
+                        // Pan en 3D (Shift+arrastre o rueda central).
+                        self.pan += respuesta.drag_delta();
+                        self.auto_camara = false;
+                    } else if respuesta.dragged_by(egui::PointerButton::Primary)
+                        || respuesta.dragged_by(egui::PointerButton::Secondary)
+                    {
                         let d = respuesta.drag_delta();
-                        self.yaw += d.x * 0.008;
-                        self.pitch = (self.pitch + d.y * 0.008).clamp(-1.35, 1.35);
+                        self.yaw += d.x * 0.007;
+                        self.pitch = (self.pitch + d.y * 0.007).clamp(-1.45, 1.45);
                     }
                 }
             }
 
             if respuesta.double_clicked() {
-                self.reset_camara();
+                self.encuadrar();
             }
 
             // Clic: seleccionar cuerpo más cercano.
@@ -704,6 +779,15 @@ impl eframe::App for AppFractal {
             }
             if i.key_pressed(egui::Key::F) {
                 self.reset_camara();
+            }
+            if i.key_pressed(egui::Key::C) {
+                self.encuadrar();
+            }
+            if i.key_pressed(egui::Key::Equals) || i.key_pressed(egui::Key::Plus) {
+                self.zoom = (self.zoom * 1.25).clamp(0.02, 250.0);
+            }
+            if i.key_pressed(egui::Key::Minus) {
+                self.zoom = (self.zoom / 1.25).clamp(0.02, 250.0);
             }
             if i.key_pressed(egui::Key::Num2) && !i.modifiers.shift {
                 self.modo = ModoVista::DosD;
@@ -791,10 +875,10 @@ impl AppFractal {
         let y2 = yn * cp - z1 * sp;
         let z2 = yn * sp + z1 * cp;
 
-        let dist = 2.8_f32;
+        let dist = self.distancia_camara.clamp(0.55, 8.0);
         let z_cam = z2 + dist;
-        let f = 1.6 / z_cam.max(0.15);
-        let s = rect.width().min(rect.height()) * 0.38 * self.zoom;
+        let f = 1.65 / z_cam.max(0.12);
+        let s = rect.width().min(rect.height()) * 0.40 * self.zoom;
         let cx = rect.center().x + self.pan.x;
         let cy = rect.center().y + self.pan.y;
         Pos2::new(cx + x1 * f * s, cy - y2 * f * s)
@@ -886,16 +970,16 @@ impl AppFractal {
     }
 
     fn dibujar_escena(&mut self, ctx: &egui::Context, painter: &egui::Painter, rect: Rect) {
-        painter.rect_filled(rect, 0.0, Color32::from_rgb(8, 10, 18));
+        fondo::dibujar(painter, rect, self.pan, self.yaw, self.pitch, self.zoom);
 
         // Precarga texturas reales cuanto antes (HUD del panel las consulta).
         for (i, c) in self.cuerpos.iter().enumerate() {
             let _ = self.texturas.obtener(ctx, &c.id, i);
         }
 
-        if self.auto_camara {
-            // Recentra suavemente tras pan manual / eyecciones.
-            self.pan *= 0.92;
+        if self.auto_camara && !self.seguir_seleccion {
+            // Recentra suave solo si no estamos siguiendo / arrastrando a mano.
+            self.pan *= 0.94;
         }
 
         if self.mostrar_malla {
