@@ -53,6 +53,9 @@ pub struct Cuerpo {
     pub posicion: Vec3,
     /// Velocidad en metros por segundo (m/s)
     pub velocidad: Vec3,
+    /// Resplandor de impacto ∈ [0, 1]. `0` = cuerpo normal; `>0` = escombro ardiente.
+    #[serde(default)]
+    pub calor: f64,
 }
 
 impl Cuerpo {
@@ -79,7 +82,20 @@ impl Cuerpo {
     ) -> Self {
         assert!(masa > 0.0, "la masa debe ser positiva");
         assert!(radio > 0.0, "el radio debe ser positivo");
-        Self { id: id.to_string(), nombre: nombre.to_string(), masa, radio, posicion, velocidad }
+        Self {
+            id: id.to_string(),
+            nombre: nombre.to_string(),
+            masa,
+            radio,
+            posicion,
+            velocidad,
+            calor: 0.0,
+        }
+    }
+
+    /// `true` si es escombro de una colisión (aún resplandeciente o recién formado).
+    pub fn es_escombro(&self) -> bool {
+        self.id.starts_with("frag_") || self.calor > 0.0
     }
 
     /// Energía cinética del cuerpo: `K = 0.5 * m * v²`.

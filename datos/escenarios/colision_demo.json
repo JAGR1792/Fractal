@@ -1,0 +1,32 @@
+{
+  "id": "colision_demo",
+  "nombre": "Colisión · dos mundos",
+  "descripcion": "Dos cuerpos en rumbo de colisión. Al impactar se destrozan en escombros ardientes que se enfrían y desaparecen.",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "marte",
+      "nombre": "Mundo A",
+      "masa": 6.39e23,
+      "radio": 3.3895e6,
+      "posicion": [-2.5e7, 0.0, 0.0],
+      "velocidad": [1200.0, 80.0, 0.0]
+    },
+    {
+      "id": "tierra",
+      "nombre": "Mundo B",
+      "masa": 5.972e24,
+      "radio": 6.371e6,
+      "posicion": [2.8e7, 0.0, 0.0],
+      "velocidad": [-900.0, -40.0, 0.0]
+    }
+  ],
+  "parametros": {
+    "dt": 20.0,
+    "nota": "Impacto en ~2–3 horas de simulación"
+  }
+}

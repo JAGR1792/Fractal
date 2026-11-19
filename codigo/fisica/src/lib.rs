@@ -10,9 +10,11 @@
 //! * [`integrador`] — Velocity Verlet y RK4
 //! * [`maniobra`] — burns impulsivos y Hohmann
 //! * [`orbital`] — elementos, ground track, eclipse
+//! * [`colision`] — impactos → escombros ardientes
 //! * [`estado`] — simulación y snapshots
 //! * [`metricas`] — energía, momento, diagnósticos
 
+pub mod colision;
 pub mod constantes;
 pub mod cuerpo;
 pub mod estado;
@@ -26,6 +28,7 @@ pub mod vector;
 
 /// Re-exportaciones convenientes para uso común.
 pub mod prelude {
+    pub use crate::colision::{enfriar_y_purgar, radio_desde_masa, resolver_colisiones};
     pub use crate::constantes::*;
     pub use crate::cuerpo::Cuerpo;
     pub use crate::estado::{Estado, simular};

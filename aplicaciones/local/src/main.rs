@@ -302,12 +302,30 @@ impl AppFractal {
             let integrador = self.mision.integrador;
             for _ in 0..pasos {
                 paso(&mut self.cuerpos, dt, &modelo, integrador);
+                // Colisiones físicas → escombros ardientes (no eyección mágica).
+                while resolver_colisiones(&mut self.cuerpos) > 0 {
+                    self.seleccionado = None;
+                }
+                enfriar_y_purgar(&mut self.cuerpos, dt);
                 self.tiempo += dt;
             }
+            self.sincronizar_estelas();
         }
         self.registrar_estela();
         self.mision.registrar_track(&self.cuerpos, self.seleccionado, self.tiempo);
         self.actualizar_span_suave();
+    }
+
+    fn sincronizar_estelas(&mut self) {
+        while self.estelas.len() < self.cuerpos.len() {
+            self.estelas.push(Vec::new());
+        }
+        self.estelas.truncate(self.cuerpos.len());
+        if let Some(i) = self.seleccionado
+            && i >= self.cuerpos.len()
+        {
+            self.seleccionado = None;
+        }
     }
 
     fn actualizar_span_suave(&mut self) {
@@ -344,8 +362,8 @@ impl AppFractal {
         let escapados: std::collections::HashSet<usize> =
             geometria_robusta(&self.cuerpos).2.into_iter().collect();
         for (i, c) in self.cuerpos.iter().enumerate() {
-            if escapados.contains(&i) {
-                continue; // no contaminar la figura con eyecciones
+            if escapados.contains(&i) || c.es_escombro() {
+                continue; // no contaminar la figura con eyecciones / escombros
             }
             let p = PuntoEstela {
                 x: (c.posicion.x - cm.x) as f32,
@@ -796,26 +814,75 @@ impl AppFractal {
         yn * sp + z1 * cp
     }
 
-    /// Radio en pantalla según radio físico (escala log) + perspectiva 3D.
-    fn radio_pantalla(&self, cuerpo: &Cuerpo, rect: Rect, prof: f32) -> f32 {
-        let r_min = self.cuerpos.iter().map(|c| c.radio).fold(f64::INFINITY, f64::min).max(1.0);
-        let r_max = self.cuerpos.iter().map(|c| c.radio).fold(0.0_f64, f64::max).max(r_min);
-        let (min_px, max_px) = if self.cuerpos.len() >= 6 {
-            (4.5_f32, (rect.width().min(rect.height()) * 0.07).clamp(28.0, 56.0))
+    /// Radio visual en metros de mundo: exagerado para verse, pero **sin solapar**.
+    ///
+    /// En Sistema Solar, un Sol dibujado “a ojo” se come a Mercurio. Aquí el radio
+    /// visual nunca supera ~38 % de la distancia al vecino más cercano.
+    fn radio_visual_mundo(&self, idx: usize) -> f64 {
+        let c = &self.cuerpos[idx];
+        let exag = if self.cuerpos.len() >= 6 {
+            350.0
+        } else if c.es_escombro() {
+            40.0
         } else {
-            (7.0_f32, (rect.width().min(rect.height()) * 0.035).clamp(14.0, 30.0))
+            90.0
         };
-        let t = if r_max > r_min * 1.01 {
-            ((cuerpo.radio / r_min).ln() / (r_max / r_min).ln()).clamp(0.0, 1.0) as f32
-        } else {
-            0.55
-        };
-        let base = min_px + (max_px - min_px) * t;
-        if self.modo == ModoVista::TresD {
-            (base * (1.12 - 0.22 * prof)).clamp(min_px * 0.85, max_px * 1.05)
-        } else {
-            base
+        let mut r = c.radio * exag;
+        let mut dmin = f64::INFINITY;
+        for (j, o) in self.cuerpos.iter().enumerate() {
+            if j == idx {
+                continue;
+            }
+            dmin = dmin.min(c.posicion.distancia(&o.posicion));
         }
+        if dmin.is_finite() && dmin > 0.0 {
+            r = r.min(dmin * 0.38);
+        }
+        r.max(c.radio * 0.5).max(1.0)
+    }
+
+    /// Radio en pantalla: proyecta el radio visual de mundo (escala con zoom).
+    fn radio_pantalla(&self, idx: usize, rect: Rect, prof: f32) -> f32 {
+        let c = &self.cuerpos[idx];
+        let vista = self.centro_vista();
+        let r = self.radio_visual_mundo(idx);
+        let p0 = self.proyectar_rel(
+            (c.posicion.x - vista.x) as f32,
+            (c.posicion.y - vista.y) as f32,
+            (c.posicion.z - vista.z) as f32,
+            rect,
+        );
+        // Offset a lo largo de +X del mundo → tamaño aparente.
+        let p1 = self.proyectar_rel(
+            (c.posicion.x - vista.x + r) as f32,
+            (c.posicion.y - vista.y) as f32,
+            (c.posicion.z - vista.z) as f32,
+            rect,
+        );
+        let mut px = p0.distance(p1);
+        if self.modo == ModoVista::TresD {
+            px *= 1.08 - 0.15 * prof.clamp(-1.0, 1.5);
+        }
+        // Piso suave: se ven los planetas lejanos sin hinchar al Sol.
+        let min_px = if c.es_escombro() {
+            2.0
+        } else if self.cuerpos.len() >= 6 {
+            2.8
+        } else {
+            5.0
+        };
+        let max_px = rect.width().min(rect.height()) * 0.22;
+        px.clamp(min_px, max_px)
+    }
+
+    fn color_escombro(calor: f64) -> Color32 {
+        let t = calor.clamp(0.0, 1.0) as f32;
+        // Blanco-amarillo → naranja → rojo oscuro → ceniza.
+        let r = (255.0) as u8;
+        let g = (40.0 + 180.0 * t * t) as u8;
+        let b = (20.0 + 40.0 * t) as u8;
+        let a = (60.0 + 195.0 * t) as u8;
+        Color32::from_rgba_unmultiplied(r, g, b, a)
     }
 
     fn dibujar_escena(&mut self, ctx: &egui::Context, painter: &egui::Painter, rect: Rect) {
@@ -840,7 +907,7 @@ impl AppFractal {
 
         let vista = self.centro_vista();
         for (i, estela) in self.estelas.iter().enumerate() {
-            if estela.len() < 2 {
+            if estela.len() < 2 || i >= self.cuerpos.len() || self.cuerpos[i].es_escombro() {
                 continue;
             }
             let base = color_planeta(&self.cuerpos[i].id, i);
@@ -890,10 +957,10 @@ impl AppFractal {
             let rz = (c.posicion.z - vista.z) as f32;
             let centro = self.proyectar_rel(rx, ry, rz, rect);
             let prof = self.profundidad_3d(rx, ry, rz);
-            let radio_px = self.radio_pantalla(c, rect, prof);
+            let radio_px = self.radio_pantalla(i, rect, prof);
 
             // Eyecciones: marcador en el borde en vez de un punto perdido al infinito.
-            if escapados.contains(&i) {
+            if escapados.contains(&i) && !c.es_escombro() {
                 let dir = (centro - rect.center()).normalized();
                 let borde = rect.center() + dir * (rect.width().min(rect.height()) * 0.46);
                 painter.circle_filled(borde, 5.0, color_planeta(&c.id, i));
@@ -904,6 +971,19 @@ impl AppFractal {
                     egui::FontId::proportional(11.0),
                     Color32::from_rgb(255, 170, 120),
                 );
+                continue;
+            }
+
+            if c.es_escombro() {
+                // Roca ardiente: núcleo blanco-naranja + halo que se apaga.
+                let col = Self::color_escombro(c.calor);
+                let halo = radio_px * (1.4 + 0.8 * c.calor as f32);
+                painter.circle_filled(
+                    centro,
+                    halo,
+                    Color32::from_rgba_unmultiplied(col.r(), col.g() / 2, 0, (col.a() / 3).max(20)),
+                );
+                painter.circle_filled(centro, radio_px, col);
                 continue;
             }
 

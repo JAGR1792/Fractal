@@ -345,7 +345,8 @@ pub fn listar_escenarios() -> Vec<EscenarioMeta> {
             "leo_hohmann" => 10,
             "formacion_safety" => 11,
             "tierra_luna_l2" => 12,
-            "sistema_solar" => 13,
+            "colision_demo" => 13,
+            "sistema_solar" => 14,
             _ => 20,
         };
         rank(&a.id).cmp(&rank(&b.id)).then_with(|| a.nombre.cmp(&b.nombre))
