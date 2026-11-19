@@ -2,7 +2,7 @@
 //!
 //! Carga JSON de `datos/escenarios/*.json` (contrato del repo: posiciones y
 //! velocidades como arrays `[x,y,z]`). Si no hay ficheros, cae al figure-8
-//! embebido (Chenciner–Montgomery escalado a SI).
+//! embebido (Chenciner–Montgomery escalado a SI) y al caos pitagórico.
 
 use fractal_fisica::prelude::*;
 use serde::Deserialize;
@@ -86,9 +86,47 @@ pub fn tres_cuerpos_figure8() -> EscenarioCargado {
     ];
     EscenarioCargado {
         id: "tres_cuerpos".into(),
-        nombre: "Figure-8 (tres cuerpos)".into(),
+        nombre: "Figure-8 (periódica)".into(),
         dt: dt_recomendado_figure8(),
         escala: escala_desde_cuerpos(&cuerpos).max(ESCALA_L),
+        cuerpos,
+    }
+}
+
+/// Problema pitagórico 3-4-5 con empujón leve — caos claro para demo.
+pub fn tres_cuerpos_caos() -> EscenarioCargado {
+    let l = 1.0e9;
+    let cuerpos = vec![
+        Cuerpo::nuevo(
+            "a",
+            "A (3)",
+            3.0e24,
+            5.0e7,
+            Vec3::new(l, 3.0 * l, 0.0),
+            Vec3::new(40.0, -25.0, 0.0),
+        ),
+        Cuerpo::nuevo(
+            "b",
+            "B (4)",
+            4.0e24,
+            5.5e7,
+            Vec3::new(-2.0 * l, -l, 0.0),
+            Vec3::new(-10.0, 55.0, 0.0),
+        ),
+        Cuerpo::nuevo(
+            "c",
+            "C (5)",
+            5.0e24,
+            6.0e7,
+            Vec3::new(l, -l, 0.0),
+            Vec3::new(-15.0, -20.0, 0.0),
+        ),
+    ];
+    EscenarioCargado {
+        id: "tres_cuerpos_caos".into(),
+        nombre: "Tres cuerpos (caos)".into(),
+        dt: 800.0,
+        escala: escala_desde_cuerpos(&cuerpos).max(l * 3.0),
         cuerpos,
     }
 }
@@ -98,16 +136,56 @@ fn dt_recomendado_figure8() -> f64 {
     tau / 400.0
 }
 
-/// Escala espacial a partir del alcance de las posiciones.
+/// Escala espacial a partir del alcance de las posiciones (respecto al origen).
 pub fn escala_desde_cuerpos(cuerpos: &[Cuerpo]) -> f64 {
     let mut max_r = 0.0_f64;
     for c in cuerpos {
-        let r = (c.posicion.x * c.posicion.x + c.posicion.y * c.posicion.y).sqrt();
+        let r = (c.posicion.x * c.posicion.x
+            + c.posicion.y * c.posicion.y
+            + c.posicion.z * c.posicion.z)
+            .sqrt();
         if r > max_r {
             max_r = r;
         }
     }
     if max_r < 1.0 { 1.0 } else { max_r }
+}
+
+/// Baricentro del sistema.
+pub fn baricentro(cuerpos: &[Cuerpo]) -> Vec3 {
+    let mut masa = 0.0;
+    let mut cx = 0.0;
+    let mut cy = 0.0;
+    let mut cz = 0.0;
+    for c in cuerpos {
+        masa += c.masa;
+        cx += c.masa * c.posicion.x;
+        cy += c.masa * c.posicion.y;
+        cz += c.masa * c.posicion.z;
+    }
+    if masa <= 0.0 {
+        return Vec3::cero();
+    }
+    Vec3::new(cx / masa, cy / masa, cz / masa)
+}
+
+/// Centro (baricentro) y semiextensión del sistema para encuadre / malla.
+pub fn geometria_sistema(cuerpos: &[Cuerpo]) -> (Vec3, f64) {
+    if cuerpos.is_empty() {
+        return (Vec3::cero(), 1.0);
+    }
+    let centro = baricentro(cuerpos);
+    let mut max_r = 0.0_f64;
+    for c in cuerpos {
+        let dx = c.posicion.x - centro.x;
+        let dy = c.posicion.y - centro.y;
+        let dz = c.posicion.z - centro.z;
+        let r = (dx * dx + dy * dy + dz * dz).sqrt().max(c.radio * 4.0);
+        if r > max_r {
+            max_r = r;
+        }
+    }
+    (centro, max_r.max(1.0))
 }
 
 /// Directorio `datos/escenarios` relativo al crate o al cwd.
@@ -123,11 +201,16 @@ pub fn directorio_escenarios() -> PathBuf {
     PathBuf::from("../datos/escenarios")
 }
 
-/// Lista escenarios JSON + asegura entrada figure-8 si falta `tres_cuerpos`.
+fn asegurar_embebido(metas: &mut Vec<EscenarioMeta>, id: &str, nombre: &str) {
+    if !metas.iter().any(|m| m.id == id) {
+        metas.push(EscenarioMeta { id: id.into(), nombre: nombre.into(), ruta: None });
+    }
+}
+
+/// Lista escenarios JSON + asegura figure-8 y caos embebidos si faltan.
 pub fn listar_escenarios() -> Vec<EscenarioMeta> {
     let dir = directorio_escenarios();
     let mut metas = Vec::new();
-    let mut tiene_tres = false;
 
     if let Ok(entradas) = fs::read_dir(&dir) {
         let mut rutas: Vec<PathBuf> = entradas
@@ -140,9 +223,6 @@ pub fn listar_escenarios() -> Vec<EscenarioMeta> {
         for ruta in rutas {
             match cargar_json(&ruta) {
                 Ok(esc) => {
-                    if esc.id == "tres_cuerpos" {
-                        tiene_tres = true;
-                    }
                     metas.push(EscenarioMeta { id: esc.id, nombre: esc.nombre, ruta: Some(ruta) });
                 }
                 Err(err) => {
@@ -152,22 +232,15 @@ pub fn listar_escenarios() -> Vec<EscenarioMeta> {
         }
     }
 
-    if !tiene_tres {
-        metas.insert(
-            0,
-            EscenarioMeta {
-                id: "tres_cuerpos".into(),
-                nombre: "Figure-8 (tres cuerpos)".into(),
-                ruta: None,
-            },
-        );
-    }
+    asegurar_embebido(&mut metas, "tres_cuerpos", "Figure-8 (periódica)");
+    asegurar_embebido(&mut metas, "tres_cuerpos_caos", "Tres cuerpos (caos)");
 
-    // Preferir tres_cuerpos / dos_cuerpos al frente si existen.
     metas.sort_by(|a, b| {
         let rank = |id: &str| match id {
-            "tres_cuerpos" => 0,
-            "dos_cuerpos" => 1,
+            "tres_cuerpos_caos" => 0,
+            "tres_cuerpos" => 1,
+            "dos_cuerpos" => 2,
+            "sistema_solar" => 3,
             _ => 10,
         };
         rank(&a.id).cmp(&rank(&b.id)).then_with(|| a.nombre.cmp(&b.nombre))
@@ -176,17 +249,18 @@ pub fn listar_escenarios() -> Vec<EscenarioMeta> {
     metas
 }
 
-/// Carga un escenario por id (ruta del catálogo o figure-8 embebido).
+/// Carga un escenario por id (ruta del catálogo o embebidos).
 pub fn cargar_por_id(id: &str, catalogo: &[EscenarioMeta]) -> Result<EscenarioCargado, String> {
     if let Some(meta) = catalogo.iter().find(|m| m.id == id)
         && let Some(ruta) = &meta.ruta
     {
         return cargar_json(ruta);
     }
-    if id == "tres_cuerpos" {
-        return Ok(tres_cuerpos_figure8());
+    match id {
+        "tres_cuerpos" => Ok(tres_cuerpos_figure8()),
+        "tres_cuerpos_caos" => Ok(tres_cuerpos_caos()),
+        _ => Err(format!("escenario desconocido: {id}")),
     }
-    Err(format!("escenario desconocido: {id}"))
 }
 
 /// Carga y valida un fichero de escenario.
@@ -215,7 +289,6 @@ pub fn cargar_json(ruta: &Path) -> Result<EscenarioCargado, String> {
 
     let escala = escala_desde_cuerpos(&cuerpos);
     let dt = raw.parametros.dt.filter(|d| *d > 0.0).unwrap_or_else(|| {
-        // Heurística: ~1/400 del tiempo característico del par más pesado.
         let m = cuerpos.iter().map(|c| c.masa).fold(0.0_f64, f64::max);
         let tau = (escala * escala * escala / (G * m.max(1.0))).sqrt();
         tau / 400.0
@@ -237,10 +310,21 @@ mod tests {
     }
 
     #[test]
+    fn caos_tiene_tres_cuerpos_desiguales() {
+        let e = tres_cuerpos_caos();
+        assert_eq!(e.cuerpos.len(), 3);
+        assert_ne!(e.cuerpos[0].masa, e.cuerpos[1].masa);
+        let (c, span) = geometria_sistema(&e.cuerpos);
+        assert!(span > 0.0);
+        assert!(c.norma() >= 0.0);
+    }
+
+    #[test]
     fn carga_tres_y_dos_si_existen() {
         let dir = directorio_escenarios();
         let tres = dir.join("tres_cuerpos.json");
         let dos = dir.join("dos_cuerpos.json");
+        let caos = dir.join("tres_cuerpos_caos.json");
         if tres.is_file() {
             let e = cargar_json(&tres).expect("tres_cuerpos");
             assert_eq!(e.id, "tres_cuerpos");
@@ -250,6 +334,11 @@ mod tests {
             let e = cargar_json(&dos).expect("dos_cuerpos");
             assert_eq!(e.id, "dos_cuerpos");
             assert_eq!(e.cuerpos.len(), 2);
+        }
+        if caos.is_file() {
+            let e = cargar_json(&caos).expect("tres_cuerpos_caos");
+            assert_eq!(e.id, "tres_cuerpos_caos");
+            assert_eq!(e.cuerpos.len(), 3);
         }
     }
 }

@@ -1,7 +1,7 @@
 {
   "id": "tres_cuerpos",
-  "nombre": "Figure-8 (tres cuerpos)",
-  "descripcion": "Coreografia periodica de Chenciner–Montgomery escalada a unidades SI. Tres masas iguales trazan un 8.",
+  "nombre": "Figure-8 (periódica)",
+  "descripcion": "Coreografia periodica de Chenciner–Montgomery escalada a unidades SI. Tres masas iguales trazan un 8 (opción estable/periódica).",
   "unidades": {
     "masa": "kg",
     "distancia": "m",

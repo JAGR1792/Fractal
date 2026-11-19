@@ -1248,6 +1248,7 @@ dependencies = [
  "eframe",
  "egui",
  "fractal-fisica",
+ "image",
  "serde",
  "serde_json",
 ]
@@ -1671,6 +1672,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]

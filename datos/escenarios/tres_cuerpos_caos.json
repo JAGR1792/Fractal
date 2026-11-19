@@ -1,0 +1,41 @@
+{
+  "id": "tres_cuerpos_caos",
+  "nombre": "Tres cuerpos (caos)",
+  "descripcion": "Masas desiguales (3-4-5) en triángulo pitagórico con un empujón leve. Divergencia clara frente al figure-8 periódico — ideal para demo docente del caos.",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "a",
+      "nombre": "A (3)",
+      "masa": 3.0e24,
+      "radio": 5.0e7,
+      "posicion": [1.0e9, 3.0e9, 0.0],
+      "velocidad": [40.0, -25.0, 0.0]
+    },
+    {
+      "id": "b",
+      "nombre": "B (4)",
+      "masa": 4.0e24,
+      "radio": 5.5e7,
+      "posicion": [-2.0e9, -1.0e9, 0.0],
+      "velocidad": [-10.0, 55.0, 0.0]
+    },
+    {
+      "id": "c",
+      "nombre": "C (5)",
+      "masa": 5.0e24,
+      "radio": 6.0e7,
+      "posicion": [1.0e9, -1.0e9, 0.0],
+      "velocidad": [-15.0, -20.0, 0.0]
+    }
+  ],
+  "parametros": {
+    "dt": 800.0,
+    "pasos": 20000,
+    "nota": "Pitagórico 3-4-5 con velocidades pequeñas; dt fino para encuentros cercanos"
+  }
+}
