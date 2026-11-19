@@ -5,3 +5,5 @@ dist/
 .vscode/
 *.log
 .DS_Store
+# Previews generados por tests de texturas
+aplicaciones/local/texturas/_preview_*.png

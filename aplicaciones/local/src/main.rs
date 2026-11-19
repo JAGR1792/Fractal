@@ -124,14 +124,15 @@ struct AppFractal {
 impl AppFractal {
     fn nueva(_cc: &eframe::CreationContext<'_>) -> Self {
         let catalogo = escenario::listar_escenarios();
-        // Arranca en una figura periódica (presentación); caos queda disponible en el selector.
+        // AppEscritorio: arranca en Sistema Solar para ver texturas reales de inmediato.
         let preferido = catalogo
             .iter()
-            .find(|m| m.id == "orbit_butterfly")
+            .find(|m| m.id == "sistema_solar")
+            .or_else(|| catalogo.iter().find(|m| m.id == "leo_hohmann"))
             .or_else(|| catalogo.iter().find(|m| m.id == "tres_cuerpos"))
             .or_else(|| catalogo.first())
             .map(|m| m.id.clone())
-            .unwrap_or_else(|| "tres_cuerpos".into());
+            .unwrap_or_else(|| "sistema_solar".into());
 
         let cargado = escenario::cargar_por_id(&preferido, &catalogo)
             .unwrap_or_else(|_| escenario::tres_cuerpos_figure8());
@@ -158,7 +159,7 @@ impl AppFractal {
             escala: esc.escala,
             zoom: 1.0,
             pan: Vec2::ZERO,
-            modo: ModoVista::DosD,
+            modo: ModoVista::TresD,
             yaw,
             pitch,
             seleccionado: None,

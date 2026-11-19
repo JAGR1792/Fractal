@@ -1,7 +1,10 @@
-//! Texturas planetarias desde `aplicaciones/web/public/texturas/`.
+//! Texturas planetarias reales para Fractal Local.
 //!
-//! Usa los PNG del repo (mapas equirectangulares). Solo cae a procedural si
-//! el fichero falta o no se puede leer.
+//! Origen preferido: `aplicaciones/local/texturas/` (mapas equirectangulares
+//! JPL/Celestia vía GMAT). Espejo opcional en `aplicaciones/web/public/texturas/`.
+//!
+//! Si el fichero falta o no pasa el umbral de calidad, cae a procedural
+//! (y el HUD lo marca en rojo).
 
 use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions};
 use std::collections::HashMap;
@@ -16,34 +19,56 @@ fn alias_textura(id: &str) -> &str {
         "sun" | "sol" => "sol",
         "mercury" | "mercurio" => "mercurio",
         "venus" => "venus",
-        "mars" | "marte" | "a" | "cuerpo_a" => "marte",
-        "jupiter" | "b" | "cuerpo_b" => "jupiter",
+        "mars" | "marte" | "a" | "cuerpo_a" | "leader" => "marte",
+        "jupiter" | "b" | "cuerpo_b" | "follower" => "jupiter",
         "saturn" | "saturno" => "saturno",
         "uranus" | "urano" => "urano",
         "neptune" | "neptuno" | "c" | "cuerpo_c" => "neptuno",
+        "sat" | "sonda" => "tierra",
         other => other,
     }
 }
 
-/// Directorios candidatos (crate → cwd).
+/// Directorios candidatos. El primero existente gana al buscar.
 pub fn directorios_texturas() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    let desde_crate = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../web/public/texturas");
-    if desde_crate.is_dir() {
-        dirs.push(desde_crate);
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // 1) Texturas propias de la app de escritorio (canónicas en AppEscritorio).
+    let local = manifest.join("texturas");
+    if local.is_dir() {
+        dirs.push(local);
     }
-    for rel in ["aplicaciones/web/public/texturas", "../web/public/texturas", "public/texturas"] {
+    // 2) Espejo web del monorepo.
+    let web = manifest.join("../web/public/texturas");
+    if web.is_dir() {
+        dirs.push(web);
+    }
+    // 3) Rutas relativas al cwd (si lanzas el binario desde la raíz del repo).
+    for rel in [
+        "aplicaciones/local/texturas",
+        "aplicaciones/web/public/texturas",
+        "texturas",
+        "public/texturas",
+    ] {
         let p = PathBuf::from(rel);
-        if p.is_dir() && !dirs.iter().any(|d| d == &p) {
+        if p.is_dir() && !dirs.iter().any(|d| same_dir(d, &p)) {
             dirs.push(p);
         }
     }
     dirs
 }
 
+fn same_dir(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(aa), Ok(bb)) => aa == bb,
+        _ => a == b,
+    }
+}
+
 fn buscar_fichero(id: &str) -> Option<PathBuf> {
     let nombre = alias_textura(id);
-    let exts = ["png", "jpg", "jpeg", "webp"];
+    // JPG primero: son las texturas reales (GMAT/JPL). PNG legacy = placeholders.
+    let exts = ["jpg", "jpeg", "png", "webp"];
     for dir in directorios_texturas() {
         for ext in exts {
             let p = dir.join(format!("{nombre}.{ext}"));
@@ -84,8 +109,8 @@ pub fn color_planeta(id: &str, indice: usize) -> Color32 {
 
 fn imagen_procedural(id: &str, indice: usize) -> ColorImage {
     let base = color_planeta(id, indice);
-    let w = 128usize;
-    let h = 128usize;
+    let w = 192usize;
+    let h = 192usize;
     let mut pixels = Vec::with_capacity(w * h);
     for y in 0..h {
         for x in 0..w {
@@ -109,14 +134,52 @@ fn imagen_procedural(id: &str, indice: usize) -> ColorImage {
     ColorImage { size: [w, h], pixels }
 }
 
+/// Heurística: rechaza los PNG placeholder antiguos (256×128 blob/rayas).
+/// Sol/Urano de GMAT son casi uniformes pero a resolución ≥ 512 — se aceptan.
+fn calidad_mapa_aceptable(rgba: &[u8], w: u32, h: u32, bytes_on_disk: usize) -> bool {
+    if w < 128 || h < 64 || rgba.len() < (w as usize * h as usize * 4) {
+        return false;
+    }
+    // Placeholders del repo eran exactamente 256×128 y < 20 KB.
+    if w <= 256 && h <= 128 && bytes_on_disk < 20_000 {
+        return false;
+    }
+    let mut hist = [0u32; 64];
+    let step = ((w * h) / 4000).max(1);
+    let mut i = 0usize;
+    let total = (w * h) as usize;
+    while i < total {
+        let o = i * 4;
+        let r = rgba[o] >> 6;
+        let g = rgba[o + 1] >> 6;
+        let b = rgba[o + 2] >> 6;
+        let bin = ((r as usize) << 4) | ((g as usize) << 2) | (b as usize);
+        hist[bin % 64] += 1;
+        i += step as usize;
+    }
+    let ocupados = hist.iter().filter(|&&c| c > 0).count();
+    // Mapas ricos (Tierra/Júpiter) o casi uniformes pero HD (Sol/Urano GMAT).
+    ocupados >= 8 || (w >= 512 && h >= 256)
+}
+
 /// Proyecta un disco esférico muestreando un mapa equirectangular (lon/lat).
 fn cargar_mapa_esfera(path: &Path) -> Result<ColorImage, String> {
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
     let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?.into_rgba8();
-    let tw = img.width() as f32;
-    let th = img.height() as f32;
-    let w = 160usize;
-    let h = 160usize;
+    let tw = img.width();
+    let th = img.height();
+    let raw = img.as_raw();
+    if !calidad_mapa_aceptable(raw, tw, th, bytes.len()) {
+        return Err(format!(
+            "mapa de baja calidad / placeholder ({tw}x{th}, {} bytes)",
+            bytes.len()
+        ));
+    }
+    let tw_f = tw as f32;
+    let th_f = th as f32;
+    // Disco más denso → se nota el continente / bandas de Júpiter.
+    let w = 256usize;
+    let h = 256usize;
     let mut pixels = Vec::with_capacity(w * h);
     for y in 0..h {
         for x in 0..w {
@@ -128,22 +191,22 @@ fn cargar_mapa_esfera(path: &Path) -> Result<ColorImage, String> {
                 continue;
             }
             let nz = (1.0 - r2).sqrt();
-            // Equirectangular: u = lon, v = lat.
             let lon = nx.atan2(nz);
             let lat = ny.asin();
             let u = ((lon / (2.0 * std::f32::consts::PI)) + 0.5).rem_euclid(1.0);
             let v = (0.5 - lat / std::f32::consts::PI).clamp(0.0, 1.0);
-            let px = (u * (tw - 1.0)) as u32;
-            let py = (v * (th - 1.0)) as u32;
+            let px = (u * (tw_f - 1.0)) as u32;
+            let py = (v * (th_f - 1.0)) as u32;
             let p = img.get_pixel(px, py);
-            let luz = (0.35 + 0.75 * (0.55 * nz - 0.25 * nx + 0.35 * (-ny)).clamp(0.0, 1.0))
-                .clamp(0.2, 1.0);
-            let a = ((1.0 - r2) * 6.0).clamp(0.0, 1.0);
+            // Luz direccional suave (izquierda-arriba).
+            let luz = (0.38 + 0.72 * (0.55 * nz - 0.28 * nx + 0.32 * (-ny)).clamp(0.0, 1.0))
+                .clamp(0.22, 1.0);
+            let borde = ((1.0 - r2) * 8.0).clamp(0.0, 1.0);
             pixels.push(Color32::from_rgba_unmultiplied(
                 (p[0] as f32 * luz) as u8,
                 (p[1] as f32 * luz) as u8,
                 (p[2] as f32 * luz) as u8,
-                (p[3] as f32 * a) as u8,
+                (p[3] as f32 * borde) as u8,
             ));
         }
     }
@@ -155,11 +218,12 @@ fn aviso_dirs() {
     UNA_VEZ.get_or_init(|| {
         let dirs = directorios_texturas();
         if dirs.is_empty() {
-            eprintln!(
-                "aviso: no se encontró aplicaciones/web/public/texturas — se usará procedural"
-            );
+            eprintln!("aviso: no se encontró aplicaciones/local/texturas — se usará procedural");
         } else {
             eprintln!("texturas: buscando en {}", dirs[0].display());
+            for (i, d) in dirs.iter().enumerate().skip(1) {
+                eprintln!("texturas: fallback[{i}] {}", d.display());
+            }
         }
     });
 }
@@ -167,7 +231,7 @@ fn aviso_dirs() {
 /// Caché de texturas egui por id de cuerpo.
 pub struct CatalogoTexturas {
     handles: HashMap<String, TextureHandle>,
-    /// Ids (alias) cargados desde PNG/JPG real.
+    /// Ids (alias) cargados desde mapa real.
     reales: HashMap<String, bool>,
 }
 
@@ -227,12 +291,60 @@ impl CatalogoTexturas {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::RgbaImage;
 
     #[test]
-    fn encuentra_png_del_repo() {
-        assert!(
-            buscar_fichero("tierra").is_some() || buscar_fichero("marte").is_some(),
-            "debe hallar texturas en aplicaciones/web/public/texturas"
-        );
+    fn encuentra_texturas_locales() {
+        let dirs = directorios_texturas();
+        assert!(!dirs.is_empty(), "debe existir aplicaciones/local/texturas");
+        for id in ["tierra", "marte", "jupiter", "luna", "sol"] {
+            let ruta = buscar_fichero(id).unwrap_or_else(|| panic!("falta textura para {id}"));
+            assert!(ruta.is_file(), "{id} → {}", ruta.display());
+            let meta = std::fs::metadata(&ruta).unwrap();
+            // Placeholders viejos eran < 20 KB; mapas reales ≥ ~3 KB (sol/urano) o >> 20 KB.
+            assert!(meta.len() > 2_000, "{id} demasiado pequeño ({})", meta.len());
+        }
+    }
+
+    #[test]
+    fn tierra_y_jupiter_no_son_placeholders() {
+        for id in ["tierra", "jupiter", "marte"] {
+            let ruta = buscar_fichero(id).expect(id);
+            let bytes = std::fs::read(&ruta).unwrap();
+            let img = image::load_from_memory(&bytes).unwrap().into_rgba8();
+            assert!(
+                calidad_mapa_aceptable(img.as_raw(), img.width(), img.height(), bytes.len()),
+                "{id} no pasa el umbral de calidad real ({})",
+                ruta.display()
+            );
+        }
+    }
+
+    #[test]
+    fn proyecta_disco_esfera_y_escribe_preview() {
+        let ruta = buscar_fichero("tierra").expect("tierra");
+        let img = cargar_mapa_esfera(&ruta).expect("cargar tierra");
+        assert_eq!(img.size, [256, 256]);
+        // Debe haber píxeles opacos (el disco) y transparentes (esquinas).
+        let opacos = img.pixels.iter().filter(|p| p.a() > 200).count();
+        let trans = img.pixels.iter().filter(|p| p.a() == 0).count();
+        assert!(opacos > 10_000, "disco demasiado vacío ({opacos})");
+        assert!(trans > 5_000, "debe haber transparencia fuera del disco ({trans})");
+
+        // Preview PNG para inspección visual en CI/local.
+        let mut rgba = RgbaImage::new(256, 256);
+        for y in 0..256u32 {
+            for x in 0..256u32 {
+                let p = img.pixels[(y as usize) * 256 + (x as usize)];
+                rgba.put_pixel(x, y, image::Rgba([p.r(), p.g(), p.b(), p.a()]));
+            }
+        }
+        let out =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("texturas/_preview_tierra_esfera.png");
+        rgba.save(&out).expect("guardar preview");
+        assert!(out.is_file());
+        // Muestrear centro: Blue Marble no es un azul plano único.
+        let centro = img.pixels[128 * 256 + 128];
+        assert!(centro.a() > 200);
     }
 }

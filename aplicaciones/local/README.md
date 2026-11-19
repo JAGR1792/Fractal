@@ -1,47 +1,69 @@
-# Fractal Local
+# Fractal Local (AppEscritorio)
 
 Aplicación de escritorio con **egui/eframe**. La física (`fractal-fisica`) corre
 **in-process**: no hace falta Axum, Vue ni pegamento web.
 
+Rama de trabajo: **`AppEscritorio`** (línea de producto escritorio, aparte del
+track web).
+
 ## Qué incluye
 
 - Escenarios desde `datos/escenarios/*.json`:
-  - **Tres cuerpos (caos)** / **Figure-8** y órbitas periódicas
-  - **Tierra-Luna**, **Sistema Solar**
-  - **LEO · Hohmann**, **Formación**, **Tierra–Luna L2** (misión)
-- Vista **2D** (defecto) y **3D** (pozo Φ + texturas reales)
-- Panel **Misión** (estilo GMAT-lite): burns VNB, Hohmann, targeting de
-  apoapsis, capas Newton/J₂, integrador Verlet/RK4, ground track, eclipse
-- Sandbox: masa y **vx/vy/vz** en vivo
-- Cámara: zoom, pan / órbita 3D, presets cenital/oblicua/perfil
-- Atajos: `Espacio`, `G`, `R`, `F`, `2`/`3` (vista)
+  - **Sistema Solar** (arranque por defecto — texturas reales)
+  - **LEO · Hohmann**, **Formación**, **Tierra–Luna L2**
+  - Tres cuerpos / órbitas periódicas / Tierra–Luna
+- Vista **2D** y **3D** (pozo gravitatorio Φ + discos texturizados)
+- **Texturas reales** en [`texturas/`](texturas/) (JPL/Celestia vía GMAT);
+  el cargador rechaza placeholders viejos
+- Panel **Misión**: burns VNB, Hohmann, targeting, Newton/J₂, Verlet/RK4,
+  ground track, eclipse
+- Sandbox: masa y velocidades en vivo
+- Cámara: zoom, pan / órbita 3D, presets cenital / oblicua / perfil
+
+## Texturas (importante)
+
+Los PNG antiguos del repo eran **placeholders procedurales** (blob azul/verde,
+rayas). Ya no se usan.
+
+Fuente canónica:
+
+```text
+aplicaciones/local/texturas/*.jpg   ← 1024×512, mapas reales
+```
+
+Comprobación automática:
+
+```bash
+cargo test -p fractal-local texturas -- --nocapture
+# genera texturas/_preview_tierra_esfera.png (gitignored) para inspección visual
+```
+
+En la UI, el HUD muestra `texturas N/M` en verde solo si cargó mapas reales.
 
 ## Requisitos
 
-- Rust **1.85+** (el workspace usa `edition = "2024"`)
-- Display gráfico (X11/Wayland) para ejecutar; `cargo build` basta para compilar
-- En Linux: `libxkbcommon-x11` (p. ej. `sudo apt install libxkbcommon-x11-0`)
+- Rust **1.85+** (`edition = "2024"`)
+- Display gráfico (X11/Wayland)
+- Linux: `libxkbcommon-x11` (p. ej. paquete del distro)
 
 ## Compilar y ejecutar
 
 Desde la raíz del repo:
 
 ```bash
-cargo build -p fractal-local
 cargo run -p fractal-local
 ```
 
-Los JSON se resuelven desde `datos/escenarios/` (ruta relativa al crate o al cwd).
-Si falta un fichero, figure-8 y caos embebidos siguen disponibles.
+Los JSON se resuelven desde `datos/escenarios/`. Las texturas desde
+`aplicaciones/local/texturas/` (vía `CARGO_MANIFEST_DIR`).
 
-## Texturas 3D
+## Atajos
 
-Si existen PNG/JPEG en `aplicaciones/web/public/texturas/` (p. ej. `tierra.png`,
-`luna.png`, `sol.png`), el modo 3D las usa. Si no, se generan discos sombreado
-procedurales por planeta.
+`Espacio` pausa · `G` pozo · `R` reiniciar · `2`/`3` vista · `[` `]` escenario ·
+`F` cámara · `P` presentación · `O` orbitar
 
-## Dirección (local primero)
+## Dirección
 
-1. **Ahora:** simulación local 2D/3D + sandbox + malla adaptativa.
-2. **Después:** más herramientas de misión (manibras, reportes).
-3. **Más adelante (estilo GMAT):** la web puede llegar como vista secundaria.
+1. Escritorio usable: simulación + misión + texturas reales.
+2. Más herramientas de misión (manibras, reportes).
+3. Web como vista secundaria (otra rama / track).

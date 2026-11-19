@@ -1,41 +1,41 @@
 # Fractal
 
-Simulador orbital 3D.
-
+Simulador orbital (escritorio + web).
 
 ## Características
 
-- **Física newtoniana** con Velocity Verlet (conservación de energía a largo plazo)
-- **Visualización 3D** con doble renderizador: ULTRA (WebGPU nativo + WASM/wgpu, máximo rendimiento) y LITE (WebGL2 mínimo, compatibilidad escolar)
-- **API asíncrona** con Axum + Tokio (simulaciones en background)
-- **Frontend** con Vue 3 + TypeScript + Vite
+- **Física newtoniana** con Velocity Verlet / RK4, capas Newton+J₂, burns y Hohmann
+- **App de escritorio** (`aplicaciones/local`, rama **`AppEscritorio`**) — egui, texturas reales, panel misión
+- **Visualización web** con doble renderizador: ULTRA (WebGPU) y LITE (WebGL2)
 - **Código y documentación en español**
 - **Tests científicos** que validan la física contra soluciones analíticas
+
+## Arranque rápido (escritorio)
+
+```bash
+git checkout AppEscritorio
+cargo run -p fractal-local
+```
+
+Detalle: [`aplicaciones/local/README.md`](aplicaciones/local/README.md). Texturas reales en
+`aplicaciones/local/texturas/` (no uses los PNG placeholder antiguos).
 
 ## Estructura del proyecto
 
 ```
 Fractal/
 ├── codigo/
-│   ├── fisica/          ← Motor gravitacional (biblioteca pura, sin dependencias)
-│   ├── renderizado/     ← Interpolación y culling en Rust (compila a WASM para ULTRA)
-│   └── api/             ← Servidor Axum (Etapa 3)
+│   ├── fisica/          ← Motor gravitacional (+ fuerzas, maniobras, orbital)
+│   └── renderizado/     ← Interpolación / culling (WASM para ULTRA)
 ├── aplicaciones/
+│   ├── local/           ← App escritorio egui (rama AppEscritorio)
+│   │   └── texturas/    ← Mapas planetarios reales (JPEG)
 │   └── web/             ← Frontend Vue 3 + TypeScript + Vite
-│       ├── ultra/       ← Renderer WebGPU nativo + WGSL + WASM (máximo rendimiento)
-│       └── lite/        ← Renderer WebGL2 mínimo (compatibilidad escolar)
-├── datos/
-│   └── escenarios/      ← Escenarios JSON de referencia
-├── documentacion/
-│   ├── cientifico/      ← Física, integración, validación
-│   ├── arquitectura/    ← ADRs, decisiones de diseño
-│   └── educativo/       ← Guías para docentes
-├── tests/
-│   ├── cientificos/     ← Tests de física (sin servidor ni gráficos)
-│   └── integracion/     ← Tests de API + cliente
-├── CONTRIBUTING.md      ← Guía de contribución
-├── clippy.toml          ← Configuración del linter
-└── rustfmt.toml         ← Configuración del formateador
+├── datos/escenarios/    ← Escenarios JSON
+├── documentacion/       ← ADRs y docs científicos
+├── CONTRIBUTING.md
+├── clippy.toml
+└── rustfmt.toml
 ```
 
 
