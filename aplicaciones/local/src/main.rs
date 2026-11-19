@@ -211,18 +211,25 @@ impl AppFractal {
         self.fisica_real = false;
         self.pausa_por_eyeccion = false;
         self.mision = EstadoMision::default();
-        // Escenarios de misión: auto-selecciona el vehículo y enciende track.
+        // LEO / formación: track + J₂. Sistema solar: pozo visible.
+        self.mision.mostrar_ground_track = false;
         if matches!(
             self.escenario_id.as_str(),
             "leo_hohmann" | "formacion_safety" | "tierra_luna_l2" | "dos_cuerpos"
         ) {
-            self.mision.mostrar_ground_track = true;
+            self.mision.mostrar_ground_track = matches!(
+                self.escenario_id.as_str(),
+                "leo_hohmann" | "formacion_safety" | "dos_cuerpos"
+            );
             if let Some((_, veh)) = EstadoMision::indices(&self.cuerpos, None) {
                 self.seleccionado = Some(veh);
             }
             if self.escenario_id == "leo_hohmann" {
                 self.mision.modelo.j2 = true;
             }
+        }
+        if self.escenario_id == "sistema_solar" || self.escenario_id == "colision_demo" {
+            self.mostrar_malla = true;
         }
         if periodica {
             self.mostrar_malla = false;
@@ -410,10 +417,14 @@ impl AppFractal {
     /// Encuadra el sistema (o la selección) con un zoom cómodo.
     fn encuadrar(&mut self) {
         self.pan = Vec2::ZERO;
-        if self.seleccionado.is_some() {
+        if let Some(i) = self.seleccionado.filter(|&i| i < self.cuerpos.len()) {
             self.seguir_seleccion = true;
-            self.zoom = (self.zoom.max(1.0) * 2.5).clamp(1.5, 80.0);
-            self.distancia_camara = 1.6;
+            let r = self.radio_visual_mundo(i).max(1.0);
+            let full = self.alcance_sistema();
+            // Que el planeta ocupe ~1/5 del campo visual.
+            self.zoom = (full / (r * 5.0)).clamp(2.0, 200_000.0) as f32;
+            self.distancia_camara = 1.35;
+            self.auto_camara = false;
         } else {
             self.seguir_seleccion = false;
             self.zoom = 1.0;
@@ -424,9 +435,27 @@ impl AppFractal {
         }
     }
 
-    /// Semiextensión usada por proyección y malla (sigue al sistema).
-    fn alcance_malla(&self) -> f64 {
+    /// Semiextensión del sistema completo (encuadre zoom=1).
+    fn alcance_sistema(&self) -> f64 {
         (self.span_suave * 1.7).max(1.0)
+    }
+
+    /// Semiextensión **visible** en metros. El zoom acerca de verdad:
+    /// zoom 1 ≈ sistema entero; zoom 10⁴ ≈ escala planetaria en Sistema Solar.
+    fn alcance_vista(&self) -> f64 {
+        let full = self.alcance_sistema();
+        (full / (self.zoom as f64).max(0.01)).clamp(full * 1e-7, full * 80.0)
+    }
+
+    /// Rejilla/pozo: cubre lo que se ve (no todo el sistema), para que al
+    /// acercarte las celdas sigan siendo grandes en pantalla.
+    fn alcance_rejilla(&self) -> f64 {
+        (self.alcance_vista() * 1.2).max(1.0)
+    }
+
+    /// Compat: proyección usa la vista actual.
+    fn alcance_malla(&self) -> f64 {
+        self.alcance_vista()
     }
 
     fn escenario_siguiente(&mut self, delta: isize) {
@@ -528,7 +557,7 @@ impl eframe::App for AppFractal {
                 ui.checkbox(&mut self.orbitar_camara, "Orbitar")
                     .on_hover_text("Gira la cámara 3D despacio (útil en proyección)");
                 ui.add(
-                    egui::Slider::new(&mut self.zoom, 0.02..=250.0)
+                    egui::Slider::new(&mut self.zoom, 0.05..=500_000.0)
                         .logarithmic(true)
                         .text("Zoom"),
                 );
@@ -712,15 +741,14 @@ impl eframe::App for AppFractal {
                     self.distancia_camara = (self.distancia_camara * f).clamp(0.55, 8.0);
                 } else if let Some(pos) = respuesta.hover_pos() {
                     let antes = self.zoom;
-                    // Exponencial: un “notch” de rueda ≈ ×1.12
-                    let pasos = (scroll / 40.0).clamp(-4.0, 4.0);
-                    self.zoom = (self.zoom * 1.12f32.powf(pasos)).clamp(0.02, 250.0);
+                    // Exponencial agresivo: un notch ≈ ×1.22 (llegar a planetas en pocas ruedas).
+                    let pasos = (scroll / 35.0).clamp(-6.0, 6.0);
+                    self.zoom = (self.zoom * 1.22f32.powf(pasos)).clamp(0.05, 500_000.0);
                     let origen = rect.center() + self.pan;
                     let offset = pos - origen;
-                    let ratio = self.zoom / antes.max(1e-4);
+                    let ratio = self.zoom / antes.max(1e-6);
                     self.pan += offset * (1.0 - ratio);
-                    // Al hacer zoom agresivo, aflojar auto-cámara para no pelear.
-                    if (self.zoom - antes).abs() / antes > 0.05 {
+                    if (self.zoom / antes - 1.0).abs() > 0.03 {
                         self.auto_camara = false;
                     }
                 }
@@ -784,10 +812,12 @@ impl eframe::App for AppFractal {
                 self.encuadrar();
             }
             if i.key_pressed(egui::Key::Equals) || i.key_pressed(egui::Key::Plus) {
-                self.zoom = (self.zoom * 1.25).clamp(0.02, 250.0);
+                self.zoom = (self.zoom * 1.4).clamp(0.05, 500_000.0);
+                self.auto_camara = false;
             }
             if i.key_pressed(egui::Key::Minus) {
-                self.zoom = (self.zoom / 1.25).clamp(0.02, 250.0);
+                self.zoom = (self.zoom / 1.4).clamp(0.05, 500_000.0);
+                self.auto_camara = false;
             }
             if i.key_pressed(egui::Key::Num2) && !i.modifiers.shift {
                 self.modo = ModoVista::DosD;
@@ -826,16 +856,19 @@ impl AppFractal {
     fn pick_cuerpo(&self, screen: Pos2, rect: Rect) -> Option<usize> {
         let cm = self.centro_vista();
         let mut mejor = None;
-        let mut mejor_d = 28.0_f32;
+        let mut mejor_d = f32::INFINITY;
         for (i, c) in self.cuerpos.iter().enumerate() {
-            let p = self.proyectar_rel(
-                (c.posicion.x - cm.x) as f32,
-                (c.posicion.y - cm.y) as f32,
-                (c.posicion.z - cm.z) as f32,
-                rect,
-            );
+            if c.es_escombro() {
+                continue;
+            }
+            let rx = (c.posicion.x - cm.x) as f32;
+            let ry = (c.posicion.y - cm.y) as f32;
+            let rz = (c.posicion.z - cm.z) as f32;
+            let p = self.proyectar_rel(rx, ry, rz, rect);
+            let r_px = self.radio_pantalla(i, rect, self.profundidad_3d(rx, ry, rz));
             let d = (p - screen).length();
-            if d < mejor_d {
+            let hit = (r_px + 14.0).max(22.0);
+            if d < hit && d < mejor_d {
                 mejor_d = d;
                 mejor = Some(i);
             }
@@ -846,12 +879,13 @@ impl AppFractal {
     fn proyectar_rel(&self, x: f32, y: f32, z: f32, rect: Rect) -> Pos2 {
         match self.modo {
             ModoVista::DosD => {
-                let mitad = self.alcance_malla() as f32;
+                // alcance_vista ya incorpora el zoom (no multiplicar otra vez).
+                let mitad = self.alcance_vista() as f32;
                 let cx = rect.center().x + self.pan.x;
                 let cy = rect.center().y + self.pan.y;
-                let sx = rect.width() * 0.45 / mitad;
-                let sy = rect.height() * 0.45 / mitad;
-                let s = sx.min(sy) * self.zoom;
+                let sx = rect.width() * 0.48 / mitad;
+                let sy = rect.height() * 0.48 / mitad;
+                let s = sx.min(sy);
                 Pos2::new(cx + x * s, cy - y * s)
             }
             ModoVista::TresD => self.proyectar_3d(x, y, z, rect),
@@ -859,7 +893,7 @@ impl AppFractal {
     }
 
     fn proyectar_3d(&self, x: f32, y: f32, z: f32, rect: Rect) -> Pos2 {
-        let escala = self.alcance_malla() as f32;
+        let escala = self.alcance_vista() as f32;
         let xn = x / escala;
         let yn = y / escala;
         let zn = z / escala;
@@ -875,10 +909,10 @@ impl AppFractal {
         let y2 = yn * cp - z1 * sp;
         let z2 = yn * sp + z1 * cp;
 
-        let dist = self.distancia_camara.clamp(0.55, 8.0);
+        let dist = self.distancia_camara.clamp(0.45, 8.0);
         let z_cam = z2 + dist;
-        let f = 1.65 / z_cam.max(0.12);
-        let s = rect.width().min(rect.height()) * 0.40 * self.zoom;
+        let f = 1.7 / z_cam.max(0.1);
+        let s = rect.width().min(rect.height()) * 0.46;
         let cx = rect.center().x + self.pan.x;
         let cy = rect.center().y + self.pan.y;
         Pos2::new(cx + x1 * f * s, cy - y2 * f * s)
@@ -955,7 +989,8 @@ impl AppFractal {
         } else {
             5.0
         };
-        let max_px = rect.width().min(rect.height()) * 0.22;
+        // De cerca: el planeta puede llenar casi media pantalla.
+        let max_px = rect.width().min(rect.height()) * 0.48;
         px.clamp(min_px, max_px)
     }
 
@@ -970,7 +1005,7 @@ impl AppFractal {
     }
 
     fn dibujar_escena(&mut self, ctx: &egui::Context, painter: &egui::Painter, rect: Rect) {
-        fondo::dibujar(painter, rect, self.pan, self.yaw, self.pitch, self.zoom);
+        fondo::dibujar(painter, rect, self.pan, self.yaw);
 
         // Precarga texturas reales cuanto antes (HUD del panel las consulta).
         for (i, c) in self.cuerpos.iter().enumerate() {
@@ -1143,17 +1178,17 @@ impl AppFractal {
         (-phi / escala_phi).clamp(0.0, 1.35)
     }
 
-    /// Malla 2D: sábana en el plano orbital con pozos.
+    /// Malla 2D: sábana en el plano orbital con pozos (escala = vista actual).
     fn dibujar_malla_2d(&self, painter: &egui::Painter, rect: Rect) {
-        let alcance = self.alcance_malla();
-        let n = if self.cuerpos.len() >= 6 { 36 } else { 28 };
-        let stroke = Stroke::new(1.1_f32, Color32::from_rgba_unmultiplied(90, 140, 190, 120));
+        let alcance = self.alcance_rejilla();
+        let n = 32;
+        let stroke = Stroke::new(1.25_f32, Color32::from_rgba_unmultiplied(100, 155, 210, 140));
 
         let nodo = |ix: i32, iy: i32| -> (f32, f32, f32) {
             let x = -alcance + (2.0 * alcance) * (ix as f64) / (n as f64);
             let y = -alcance + (2.0 * alcance) * (iy as f64) / (n as f64);
             let profund = self.potencial_en(x, y, alcance);
-            let z = -profund * alcance * 0.55;
+            let z = -profund * alcance * 0.45;
             (x as f32, y as f32, z as f32)
         };
 
@@ -1180,8 +1215,9 @@ impl AppFractal {
     /// No es la rejilla cúbica: se ve la curvatura del espacio-tiempo de juguete,
     /// con color más cálido en el fondo del pozo.
     fn dibujar_pozo_3d(&self, painter: &egui::Painter, rect: Rect) {
-        let alcance = self.alcance_malla();
-        let n = if self.cuerpos.len() >= 6 { 22 } else { 28 };
+        // Rejilla = campo visible: al hacer zoom las celdas siguen grandes en pantalla.
+        let alcance = self.alcance_rejilla();
+        let n = 30;
 
         let mut nodos =
             vec![vec![(0.0_f32, 0.0_f32, 0.0_f32, 0.0_f64); (n + 1) as usize]; (n + 1) as usize];

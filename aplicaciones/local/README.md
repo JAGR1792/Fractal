@@ -17,6 +17,7 @@ track web).
   el cargador rechaza placeholders viejos
 - **Escala visual anti-solape**: planetas exagerados pero el Sol no se come a
   Mercurio (radio visual ≤ 38 % de la distancia al vecino)
+- **Zoom real** (hasta ~10⁵×): la rejilla/pozo se adapta al campo visible
 - **Colisiones** estilo Universe Sandbox: impacto → escombros ardientes que se
   enfrían, pierden masa y desaparecen (`colision_demo`)
 - Panel **Misión**: burns VNB, Hohmann, targeting, Newton/J₂, Verlet/RK4,

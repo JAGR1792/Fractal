@@ -1,6 +1,6 @@
 //! Panel de misión estilo GMAT-lite: burns, Hohmann, targeting, fuerzas, track.
 
-use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
+use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use fractal_fisica::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -289,10 +289,4 @@ pub fn fondo_track(painter: &egui::Painter, rect: Rect) {
         egui::FontId::proportional(11.0),
         Color32::from_gray(160),
     );
-}
-
-/// Interactuar con el mini-mapa no debe robar el drag de la escena.
-#[allow(dead_code)]
-pub fn sense_track() -> Sense {
-    Sense::hover()
 }
