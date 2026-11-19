@@ -220,6 +220,9 @@ pub fn geometria_sistema(cuerpos: &[Cuerpo]) -> (Vec3, f64) {
 /// Encuadre robusto: ignora eyecciones lejanas para que la cámara no “congele”.
 ///
 /// Devuelve `(centro_local, span, indices_escapados)`.
+///
+/// Si el sistema se disuelve por completo (todos lejos / hiperveloces), el span
+/// se acota al tamaño típico del núcleo previo vía `span_ref` del llamador.
 pub fn geometria_robusta(cuerpos: &[Cuerpo]) -> (Vec3, f64, Vec<usize>) {
     if cuerpos.is_empty() {
         return (Vec3::cero(), 1.0, Vec::new());
@@ -237,23 +240,42 @@ pub fn geometria_robusta(cuerpos: &[Cuerpo]) -> (Vec3, f64, Vec<usize>) {
         .collect();
     radios.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
     let med = radios[radios.len() / 2].1.max(1.0);
-    let umbral = (med * 4.5).max(med + 1.0);
+    // Más agresivo: 3× mediana o detección por velocidad de escape local.
+    let umbral = (med * 3.0).max(med + 1.0);
     let mut escapados = Vec::new();
     let mut nucleos = Vec::new();
     for &(i, r) in &radios {
-        if r > umbral && cuerpos.len() >= 3 {
+        let v = cuerpos[i].velocidad.norma();
+        let hipervelo = v > 1.0e5; // ~100 km/s en unidades SI de nuestros escenarios
+        if (r > umbral || hipervelo) && cuerpos.len() >= 2 {
             escapados.push(i);
         } else {
             nucleos.push(i);
         }
     }
     if nucleos.is_empty() {
-        nucleos = (0..cuerpos.len()).collect();
-        escapados.clear();
+        // Sistema disuelto: centra en el más lento (suele ser el “resto”) y
+        // reporta todos como escapados para que la UI pause / avise.
+        let mas_lento = cuerpos
+            .iter()
+            .enumerate()
+            .min_by(|a, b| {
+                a.1.velocidad
+                    .norma()
+                    .partial_cmp(&b.1.velocidad.norma())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        nucleos.push(mas_lento);
+        escapados = (0..cuerpos.len()).filter(|&i| i != mas_lento).collect();
+        if escapados.is_empty() {
+            escapados.push(mas_lento);
+        }
     }
     let sub: Vec<Cuerpo> = nucleos.iter().map(|&i| cuerpos[i].clone()).collect();
     let (centro, span) = geometria_sistema(&sub);
-    (centro, span.max(med * 1.2), escapados)
+    (centro, span.max(med * 0.8).max(1.0), escapados)
 }
 
 /// Directorio `datos/escenarios` relativo al crate o al cwd.

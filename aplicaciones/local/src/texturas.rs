@@ -167,11 +167,28 @@ fn aviso_dirs() {
 /// Caché de texturas egui por id de cuerpo.
 pub struct CatalogoTexturas {
     handles: HashMap<String, TextureHandle>,
+    /// Ids (alias) cargados desde PNG/JPG real.
+    reales: HashMap<String, bool>,
 }
 
 impl CatalogoTexturas {
     pub fn nuevo() -> Self {
-        Self { handles: HashMap::new() }
+        Self { handles: HashMap::new(), reales: HashMap::new() }
+    }
+
+    /// `(reales, total_en_caché)`.
+    pub fn conteo(&self) -> (usize, usize) {
+        let reales = self.reales.values().filter(|&&r| r).count();
+        (reales, self.reales.len().max(self.handles.len()))
+    }
+
+    pub fn es_real(&self, id: &str) -> bool {
+        self.reales.get(alias_textura(id)).copied().unwrap_or(false)
+    }
+
+    /// Rutas candidatas (para diagnóstico en HUD).
+    pub fn ruta_de(&self, id: &str) -> Option<PathBuf> {
+        buscar_fichero(id)
     }
 
     pub fn obtener(&mut self, ctx: &egui::Context, id: &str, indice: usize) -> TextureHandle {
@@ -180,27 +197,42 @@ impl CatalogoTexturas {
         if let Some(h) = self.handles.get(&clave) {
             return h.clone();
         }
-        let imagen = match buscar_fichero(id) {
+        let (imagen, real) = match buscar_fichero(id) {
             Some(ruta) => match cargar_mapa_esfera(&ruta) {
                 Ok(img) => {
-                    eprintln!("textura cargada: {} → {}", id, ruta.display());
-                    img
+                    eprintln!("textura real: {} → {}", id, ruta.display());
+                    (img, true)
                 }
                 Err(err) => {
-                    eprintln!("aviso textura {}: {err} — procedural", ruta.display());
-                    imagen_procedural(id, indice)
+                    eprintln!("ERROR textura {}: {err} — fallback procedural", ruta.display());
+                    (imagen_procedural(id, indice), false)
                 }
             },
             None => {
                 eprintln!(
-                    "aviso: sin fichero para '{id}' (alias {}) — procedural",
-                    alias_textura(id)
+                    "ERROR: sin fichero para '{id}' (alias {}). dirs={:?}",
+                    alias_textura(id),
+                    directorios_texturas()
                 );
-                imagen_procedural(id, indice)
+                (imagen_procedural(id, indice), false)
             }
         };
+        self.reales.insert(clave.clone(), real);
         let handle = ctx.load_texture(format!("planeta-{clave}"), imagen, TextureOptions::LINEAR);
         self.handles.insert(clave, handle.clone());
         handle
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encuentra_png_del_repo() {
+        assert!(
+            buscar_fichero("tierra").is_some() || buscar_fichero("marte").is_some(),
+            "debe hallar texturas en aplicaciones/web/public/texturas"
+        );
     }
 }

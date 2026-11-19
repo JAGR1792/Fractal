@@ -10,8 +10,8 @@ use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use fractal_fisica::prelude::*;
 
 use escenario::{
-    EscenarioCargado, EscenarioMeta, TrayectoriaPeriodica, baricentro, geometria_robusta,
-    geometria_sistema, muestrear_trayectoria,
+    EscenarioCargado, EscenarioMeta, TrayectoriaPeriodica, geometria_robusta, geometria_sistema,
+    muestrear_trayectoria,
 };
 use texturas::{CatalogoTexturas, color_planeta};
 
@@ -109,8 +109,12 @@ struct AppFractal {
     trayectoria: Option<TrayectoriaPeriodica>,
     /// Fase ∈ [0, 1) sobre el período cuando hay trayectoria.
     fase_orbita: f64,
-    /// Si true y hay trayectoria, ignora el bucle y integra Verlet (diverge: didáctico).
-    integrar_en_vivo: bool,
+    /// Si true y hay trayectoria, usa Verlet en vez del bucle (casi siempre diverge).
+    fisica_real: bool,
+    /// Tope de encuadre (= escala inicial × factor) para no “congelar” al alejarse.
+    span_tope: f64,
+    /// Se activó pausa automática por eyección / disolución.
+    pausa_por_eyeccion: bool,
 }
 
 impl AppFractal {
@@ -163,7 +167,9 @@ impl AppFractal {
             orbitar_camara: false,
             trayectoria: esc.trayectoria,
             fase_orbita: 0.0,
-            integrar_en_vivo: false,
+            fisica_real: false,
+            span_tope: span.max(esc.escala) * 10.0,
+            pausa_por_eyeccion: false,
         }
     }
 
@@ -181,12 +187,14 @@ impl AppFractal {
         self.pan = Vec2::ZERO;
         self.seleccionado = None;
         self.span_suave = span.max(esc.escala);
+        self.span_tope = self.span_suave * 10.0;
         self.escapados.clear();
         self.auto_camara = true;
         self.modo_presentacion = periodica;
         self.trayectoria = esc.trayectoria;
         self.fase_orbita = 0.0;
-        self.integrar_en_vivo = false;
+        self.fisica_real = false;
+        self.pausa_por_eyeccion = false;
         if periodica {
             self.mostrar_malla = false;
         }
@@ -255,7 +263,7 @@ impl AppFractal {
     }
 
     fn avanzar(&mut self, pasos: usize) {
-        let usa_coreografia = self.trayectoria.is_some() && !self.integrar_en_vivo;
+        let usa_coreografia = self.trayectoria.is_some() && !self.fisica_real;
         if usa_coreografia {
             let tray = self.trayectoria.as_ref().unwrap();
             let periodo = tray.periodo_si.max(1.0);
@@ -267,9 +275,12 @@ impl AppFractal {
             let tray = tray.clone();
             muestrear_trayectoria(&tray, fase, &mut self.cuerpos);
         } else {
+            // dt adaptativo: si alguien ya va muy rápido, no “teletransportar”.
+            let vmax = self.cuerpos.iter().map(|c| c.velocidad.norma()).fold(0.0_f64, f64::max);
+            let dt = if vmax > 5.0e4 { self.dt * (5.0e4 / vmax).clamp(0.02, 1.0) } else { self.dt };
             for _ in 0..pasos {
-                paso_velocity_verlet(&mut self.cuerpos, self.dt);
-                self.tiempo += self.dt;
+                paso_velocity_verlet(&mut self.cuerpos, dt);
+                self.tiempo += dt;
             }
         }
         self.registrar_estela();
@@ -282,22 +293,37 @@ impl AppFractal {
             .iter()
             .filter_map(|&i| self.cuerpos.get(i).map(|c| c.nombre.clone()))
             .collect();
-        let objetivo = span.max(self.escala * 0.05);
+        let objetivo = span.max(self.escala * 0.05).min(self.span_tope);
         // EMA: reacciona a expansión del núcleo (no a eyecciones lejanas).
         let alfa = if objetivo > self.span_suave * 1.02 {
-            0.35
+            0.22
         } else if objetivo < self.span_suave * 0.85 {
             0.08
         } else {
             0.12
         };
-        self.span_suave = self.span_suave * (1.0 - alfa) + objetivo * alfa;
+        self.span_suave = (self.span_suave * (1.0 - alfa) + objetivo * alfa).min(self.span_tope);
+
+        // Si la física real disolvió el sistema, pausar: el “congelado” engaña.
+        if self.fisica_real && !self.escapados.is_empty() && !self.pausa_por_eyeccion {
+            let vmax = self.cuerpos.iter().map(|c| c.velocidad.norma()).fold(0.0_f64, f64::max);
+            let disuelto = self.escapados.len() + 1 >= self.cuerpos.len() || vmax > 2.0e5;
+            if disuelto || span >= self.span_tope * 0.95 {
+                self.pausado = true;
+                self.pausa_por_eyeccion = true;
+            }
+        }
     }
 
     fn registrar_estela(&mut self) {
         let max = if self.modo_presentacion { 4200 } else { 1400 };
-        let cm = baricentro(&self.cuerpos);
+        let cm = self.centro_vista();
+        let escapados: std::collections::HashSet<usize> =
+            geometria_robusta(&self.cuerpos).2.into_iter().collect();
         for (i, c) in self.cuerpos.iter().enumerate() {
+            if escapados.contains(&i) {
+                continue; // no contaminar la figura con eyecciones
+            }
             let p = PuntoEstela {
                 x: (c.posicion.x - cm.x) as f32,
                 y: (c.posicion.y - cm.y) as f32,
@@ -309,6 +335,11 @@ impl AppFractal {
                 self.estelas[i].drain(0..sobra);
             }
         }
+    }
+
+    /// Centro de cámara: núcleo ligado (no el CM arrastrado por eyecciones).
+    fn centro_vista(&self) -> Vec3 {
+        geometria_robusta(&self.cuerpos).0
     }
 
     fn reset_camara(&mut self) {
@@ -384,7 +415,13 @@ impl eframe::App for AppFractal {
                 ui.separator();
                 ui.label("Vista");
                 ui.selectable_value(&mut self.modo, ModoVista::DosD, "2D");
-                ui.selectable_value(&mut self.modo, ModoVista::TresD, "3D");
+                if ui.selectable_value(&mut self.modo, ModoVista::TresD, "3D").clicked()
+                    && self.mostrar_malla
+                    && self.preset_camara == PresetCamara::Cenital
+                {
+                    // El pozo se lee mejor en oblicua que cenital.
+                    self.aplicar_preset_camara(PresetCamara::Oblicua);
+                }
 
                 ui.separator();
                 ui.label("Cámara");
@@ -404,7 +441,8 @@ impl eframe::App for AppFractal {
                 ui.separator();
                 ui.label("Velocidad");
                 ui.add(egui::Slider::new(&mut self.velocidad, 0.1..=4.0));
-                ui.checkbox(&mut self.mostrar_malla, "Malla gravitatoria");
+                ui.checkbox(&mut self.mostrar_malla, "Pozo gravitatorio")
+                    .on_hover_text("2D: sábana · 3D: tejido/curvatura (potencial Φ)");
                 ui.checkbox(&mut self.auto_camara, "Auto-cámara")
                     .on_hover_text("Sigue al núcleo ligado; ignora eyecciones lejanas");
                 ui.checkbox(&mut self.modo_presentacion, "Presentación")
@@ -412,23 +450,48 @@ impl eframe::App for AppFractal {
                 ui.checkbox(&mut self.orbitar_camara, "Orbitar")
                     .on_hover_text("Gira la cámara 3D despacio (útil en proyección)");
                 if self.trayectoria.is_some() {
-                    ui.checkbox(&mut self.integrar_en_vivo, "Integrar en vivo")
+                    let antes = self.fisica_real;
+                    ui.checkbox(&mut self.fisica_real, "Física real ⚠")
                         .on_hover_text(
-                            "OFF = coreografía (período en bucle, como Observable). ON = Verlet (diverge: la mayoría son inestables).",
+                            "OFF (recomendado): coreografía — un período en bucle, la figura se mantiene.\n\
+                             ON: integra con Verlet de verdad. Casi todas estas órbitas son inestables: \
+                             en segundos alguien sale disparado y parece «congelado» al alejarse.",
                         );
+                    if self.fisica_real && !antes {
+                        self.pausa_por_eyeccion = false;
+                        self.estelas = vec![Vec::new(); self.cuerpos.len()];
+                    }
+                    if !self.fisica_real && antes {
+                        // Volver al bucle limpio.
+                        self.reiniciar();
+                    }
                 }
                 ui.separator();
                 ui.monospace(format!("t = {:.3e} s", self.tiempo));
-                if self.trayectoria.is_some() && !self.integrar_en_vivo {
+                if self.trayectoria.is_some() && !self.fisica_real {
                     ui.monospace(format!("fase {:.1}%", self.fase_orbita * 100.0));
                 }
                 let e = energia_total(&self.cuerpos);
                 ui.monospace(format!("E = {:.6e} J", e));
                 ui.monospace(format!("zoom {:.2}×", self.zoom));
-                if !self.escapados.is_empty() {
+                let (n_real, n_tex) = self.texturas.conteo();
+                if n_tex > 0 {
+                    let col = if n_real == n_tex {
+                        Color32::from_rgb(120, 200, 160)
+                    } else {
+                        Color32::from_rgb(255, 180, 90)
+                    };
+                    ui.colored_label(col, format!("texturas {n_real}/{n_tex}"));
+                }
+                if self.pausa_por_eyeccion {
+                    ui.colored_label(
+                        Color32::from_rgb(255, 120, 100),
+                        "Sistema disuelto (eyección). Reinicia o desactiva Física real.",
+                    );
+                } else if !self.escapados.is_empty() {
                     ui.colored_label(
                         Color32::from_rgb(255, 180, 90),
-                        format!("Eyección: {} (cámara en el núcleo)", self.escapados.join(", ")),
+                        format!("Eyección: {} — cámara en el núcleo", self.escapados.join(", ")),
                     );
                 }
             });
@@ -504,7 +567,22 @@ impl eframe::App for AppFractal {
             if self.trayectoria.is_some() {
                 ui.colored_label(
                     Color32::from_rgb(120, 200, 160),
-                    "Coreografía: un período precomputado en bucle (las demás familias divergen en vivo).",
+                    "Por defecto: coreografía (período en bucle). «Física real» integra Verlet y casi siempre eyecta — por eso parece que se congelan.",
+                );
+            }
+            ui.add_space(6.0);
+            ui.label("Texturas");
+            for c in &self.cuerpos {
+                let ok = self.texturas.es_real(&c.id);
+                let ruta = self.texturas.ruta_de(&c.id);
+                let msg = match (ok, ruta) {
+                    (true, Some(p)) => format!("✓ {} ← {}", c.nombre, p.file_name().and_then(|n| n.to_str()).unwrap_or("?")),
+                    (_, Some(p)) => format!("✗ {} (falló {})", c.nombre, p.display()),
+                    _ => format!("✗ {} (sin PNG)", c.nombre),
+                };
+                ui.colored_label(
+                    if ok { Color32::from_rgb(120, 200, 160) } else { Color32::from_rgb(255, 140, 100) },
+                    msg,
                 );
             }
             ui.add_space(8.0);
@@ -611,7 +689,7 @@ impl eframe::App for AppFractal {
 
 impl AppFractal {
     fn pick_cuerpo(&self, screen: Pos2, rect: Rect) -> Option<usize> {
-        let cm = baricentro(&self.cuerpos);
+        let cm = self.centro_vista();
         let mut mejor = None;
         let mut mejor_d = 28.0_f32;
         for (i, c) in self.cuerpos.iter().enumerate() {
@@ -685,8 +763,35 @@ impl AppFractal {
         yn * sp + z1 * cp
     }
 
+    /// Radio en pantalla según radio físico (escala log) + perspectiva 3D.
+    fn radio_pantalla(&self, cuerpo: &Cuerpo, rect: Rect, prof: f32) -> f32 {
+        let r_min = self.cuerpos.iter().map(|c| c.radio).fold(f64::INFINITY, f64::min).max(1.0);
+        let r_max = self.cuerpos.iter().map(|c| c.radio).fold(0.0_f64, f64::max).max(r_min);
+        let (min_px, max_px) = if self.cuerpos.len() >= 6 {
+            (4.5_f32, (rect.width().min(rect.height()) * 0.07).clamp(28.0, 56.0))
+        } else {
+            (7.0_f32, (rect.width().min(rect.height()) * 0.035).clamp(14.0, 30.0))
+        };
+        let t = if r_max > r_min * 1.01 {
+            ((cuerpo.radio / r_min).ln() / (r_max / r_min).ln()).clamp(0.0, 1.0) as f32
+        } else {
+            0.55
+        };
+        let base = min_px + (max_px - min_px) * t;
+        if self.modo == ModoVista::TresD {
+            (base * (1.12 - 0.22 * prof)).clamp(min_px * 0.85, max_px * 1.05)
+        } else {
+            base
+        }
+    }
+
     fn dibujar_escena(&mut self, ctx: &egui::Context, painter: &egui::Painter, rect: Rect) {
         painter.rect_filled(rect, 0.0, Color32::from_rgb(8, 10, 18));
+
+        // Precarga texturas reales cuanto antes (HUD del panel las consulta).
+        for (i, c) in self.cuerpos.iter().enumerate() {
+            let _ = self.texturas.obtener(ctx, &c.id, i);
+        }
 
         if self.auto_camara {
             // Recentra suavemente tras pan manual / eyecciones.
@@ -696,10 +801,11 @@ impl AppFractal {
         if self.mostrar_malla {
             match self.modo {
                 ModoVista::DosD => self.dibujar_malla_2d(painter, rect),
-                ModoVista::TresD => self.dibujar_malla_3d(painter, rect),
+                ModoVista::TresD => self.dibujar_pozo_3d(painter, rect),
             }
         }
 
+        let vista = self.centro_vista();
         for (i, estela) in self.estelas.iter().enumerate() {
             if estela.len() < 2 {
                 continue;
@@ -708,7 +814,6 @@ impl AppFractal {
             let puntos: Vec<Pos2> =
                 estela.iter().map(|p| self.proyectar_rel(p.x, p.y, p.z, rect)).collect();
             if self.modo_presentacion {
-                // Fade de cola → cabeza (como las estelas WebGL del notebook).
                 let n = puntos.len().saturating_sub(1).max(1);
                 let grosor = 2.2_f32;
                 for (k, w) in puntos.windows(2).enumerate() {
@@ -723,45 +828,51 @@ impl AppFractal {
             }
         }
 
-        let cm = baricentro(&self.cuerpos);
         let mut orden: Vec<usize> = (0..self.cuerpos.len()).collect();
         if self.modo == ModoVista::TresD {
             orden.sort_by(|&a, &b| {
                 let pa = &self.cuerpos[a].posicion;
                 let pb = &self.cuerpos[b].posicion;
                 let da = self.profundidad_3d(
-                    (pa.x - cm.x) as f32,
-                    (pa.y - cm.y) as f32,
-                    (pa.z - cm.z) as f32,
+                    (pa.x - vista.x) as f32,
+                    (pa.y - vista.y) as f32,
+                    (pa.z - vista.z) as f32,
                 );
                 let db = self.profundidad_3d(
-                    (pb.x - cm.x) as f32,
-                    (pb.y - cm.y) as f32,
-                    (pb.z - cm.z) as f32,
+                    (pb.x - vista.x) as f32,
+                    (pb.y - vista.y) as f32,
+                    (pb.z - vista.z) as f32,
                 );
                 db.partial_cmp(&da).unwrap_or(std::cmp::Ordering::Equal)
             });
         }
 
+        let escapados: std::collections::HashSet<usize> =
+            geometria_robusta(&self.cuerpos).2.into_iter().collect();
+
         for &i in &orden {
             let c = &self.cuerpos[i];
-            let centro = self.proyectar_rel(
-                (c.posicion.x - cm.x) as f32,
-                (c.posicion.y - cm.y) as f32,
-                (c.posicion.z - cm.z) as f32,
-                rect,
-            );
-            let base = (rect.width().min(rect.height()) * 0.02).clamp(6.0, 22.0);
-            let radio_px = if self.modo == ModoVista::TresD {
-                let prof = self.profundidad_3d(
-                    (c.posicion.x - cm.x) as f32,
-                    (c.posicion.y - cm.y) as f32,
-                    (c.posicion.z - cm.z) as f32,
+            let rx = (c.posicion.x - vista.x) as f32;
+            let ry = (c.posicion.y - vista.y) as f32;
+            let rz = (c.posicion.z - vista.z) as f32;
+            let centro = self.proyectar_rel(rx, ry, rz, rect);
+            let prof = self.profundidad_3d(rx, ry, rz);
+            let radio_px = self.radio_pantalla(c, rect, prof);
+
+            // Eyecciones: marcador en el borde en vez de un punto perdido al infinito.
+            if escapados.contains(&i) {
+                let dir = (centro - rect.center()).normalized();
+                let borde = rect.center() + dir * (rect.width().min(rect.height()) * 0.46);
+                painter.circle_filled(borde, 5.0, color_planeta(&c.id, i));
+                painter.text(
+                    borde + Vec2::new(0.0, 10.0),
+                    egui::Align2::CENTER_TOP,
+                    format!("{} ↗", c.nombre),
+                    egui::FontId::proportional(11.0),
+                    Color32::from_rgb(255, 170, 120),
                 );
-                (base * (1.15 - 0.25 * prof)).clamp(5.0, 26.0)
-            } else {
-                base
-            };
+                continue;
+            }
 
             let tex = self.texturas.obtener(ctx, &c.id, i);
             let side = radio_px * 2.2;
@@ -793,13 +904,13 @@ impl AppFractal {
 
         let modo = match self.modo {
             ModoVista::DosD => "2D",
-            ModoVista::TresD => "3D (arrastre: órbita)",
+            ModoVista::TresD => "3D · pozo Φ",
         };
         painter.text(
             rect.left_bottom() + Vec2::new(12.0, -14.0),
             egui::Align2::LEFT_BOTTOM,
             format!(
-                "{modo} · {} · P: presentación · 1 cenital · Shift+2/3 oblicua/perfil · O: orbitar · [ ]: órbita",
+                "{modo} · {} · P presentación · G pozo · R reiniciar · [ ] órbita",
                 self.preset_camara.etiqueta()
             ),
             egui::FontId::proportional(12.0),
@@ -807,36 +918,28 @@ impl AppFractal {
         );
     }
 
-    /// Desplazamiento del campo en un punto relativo al CM (suavizado).
-    fn campo_en(&self, x: f64, y: f64, z: f64, alcance: f64) -> (f64, f64, f64) {
-        let soft = alcance * 0.14;
-        let amp = alcance * 0.20;
-        let max_disp = alcance * 0.16;
-        let cm = baricentro(&self.cuerpos);
-        let mut dx = 0.0;
-        let mut dy = 0.0;
-        let mut dz = 0.0;
+    /// Potencial newtoniano suavizado Φ (negativo cerca de masas) → profundidad del pozo.
+    fn potencial_en(&self, x: f64, y: f64, alcance: f64) -> f64 {
+        let vista = self.centro_vista();
+        let soft = (alcance * 0.08).max(1.0);
+        let mut phi = 0.0_f64;
+        let mut m_tot = 0.0_f64;
         for c in &self.cuerpos {
-            let rx = (c.posicion.x - cm.x) - x;
-            let ry = (c.posicion.y - cm.y) - y;
-            let rz = (c.posicion.z - cm.z) - z;
-            let r2 = rx * rx + ry * ry + rz * rz + soft * soft;
-            let w = amp * (alcance * alcance) / r2;
-            let inv = w / r2.sqrt();
-            dx += rx * inv;
-            dy += ry * inv;
-            dz += rz * inv;
+            m_tot += c.masa;
+            let rx = (c.posicion.x - vista.x) - x;
+            let ry = (c.posicion.y - vista.y) - y;
+            let r = (rx * rx + ry * ry + soft * soft).sqrt();
+            phi -= c.masa / r;
         }
-        let mag = (dx * dx + dy * dy + dz * dz).sqrt();
-        if mag > max_disp {
-            dx *= max_disp / mag;
-            dy *= max_disp / mag;
-            dz *= max_disp / mag;
+        if m_tot <= 0.0 {
+            return 0.0;
         }
-        (dx, dy, dz)
+        // Normaliza: 0 lejos, ~1 en el pozo más profundo típico.
+        let escala_phi = m_tot / (alcance * 0.35).max(soft);
+        (-phi / escala_phi).clamp(0.0, 1.35)
     }
 
-    /// Malla 2D: sábana en el plano orbital (XY) con pozos de potencial.
+    /// Malla 2D: sábana en el plano orbital con pozos.
     fn dibujar_malla_2d(&self, painter: &egui::Painter, rect: Rect) {
         let alcance = self.alcance_malla();
         let n = if self.cuerpos.len() >= 6 { 36 } else { 28 };
@@ -845,9 +948,9 @@ impl AppFractal {
         let nodo = |ix: i32, iy: i32| -> (f32, f32, f32) {
             let x = -alcance + (2.0 * alcance) * (ix as f64) / (n as f64);
             let y = -alcance + (2.0 * alcance) * (iy as f64) / (n as f64);
-            let (dx, dy, dz) = self.campo_en(x, y, 0.0, alcance);
-            // En 2D el “pozo” se lee como hundimiento visual en Z proyectada.
-            ((x + dx) as f32, (y + dy) as f32, (dz - 0.12 * alcance) as f32)
+            let profund = self.potencial_en(x, y, alcance);
+            let z = -profund * alcance * 0.55;
+            (x as f32, y as f32, z as f32)
         };
 
         for iy in 0..=n {
@@ -868,76 +971,73 @@ impl AppFractal {
         }
     }
 
-    /// Malla 3D: retícula cúbica (no la sábana 2D) deformada por el campo.
-    fn dibujar_malla_3d(&self, painter: &egui::Painter, rect: Rect) {
+    /// Tejido 3D tipo «sábana elástica» / pozo gravitatorio (potencial Φ → hundimiento Z).
+    ///
+    /// No es la rejilla cúbica: se ve la curvatura del espacio-tiempo de juguete,
+    /// con color más cálido en el fondo del pozo.
+    fn dibujar_pozo_3d(&self, painter: &egui::Painter, rect: Rect) {
         let alcance = self.alcance_malla();
-        let n = 8; // aristas por eje — legible sin tapar planetas
-        let stroke = Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(100, 170, 210, 95));
-        let stroke_eje = Stroke::new(1.4_f32, Color32::from_rgba_unmultiplied(255, 176, 0, 90));
+        let n = if self.cuerpos.len() >= 6 { 22 } else { 28 };
 
-        let nodo = |ix: i32, iy: i32, iz: i32| -> (f32, f32, f32) {
-            let x = -alcance + (2.0 * alcance) * (ix as f64) / (n as f64);
-            let y = -alcance + (2.0 * alcance) * (iy as f64) / (n as f64);
-            let z = -alcance + (2.0 * alcance) * (iz as f64) / (n as f64);
-            let (dx, dy, dz) = self.campo_en(x, y, z, alcance);
-            ((x + dx) as f32, (y + dy) as f32, (z + dz) as f32)
+        let mut nodos =
+            vec![vec![(0.0_f32, 0.0_f32, 0.0_f32, 0.0_f64); (n + 1) as usize]; (n + 1) as usize];
+        for iy in 0..=n {
+            for ix in 0..=n {
+                let x = -alcance + (2.0 * alcance) * (ix as f64) / (n as f64);
+                let y = -alcance + (2.0 * alcance) * (iy as f64) / (n as f64);
+                let profund = self.potencial_en(x, y, alcance);
+                let z = -profund * alcance * 0.62;
+                nodos[iy as usize][ix as usize] = (x as f32, y as f32, z as f32, profund);
+            }
+        }
+
+        let color_prof = |p: f64| -> Color32 {
+            let t = (p / 1.2).clamp(0.0, 1.0) as f32;
+            // Azul frío lejos → ámbar en el pozo.
+            let r = (70.0 + 160.0 * t) as u8;
+            let g = (130.0 + 40.0 * (1.0 - t)) as u8;
+            let b = (200.0 * (1.0 - 0.55 * t)) as u8;
+            let a = (85.0 + 90.0 * t) as u8;
+            Color32::from_rgba_unmultiplied(r, g, b, a)
         };
 
-        // Líneas paralelas a X / Y / Z (caja volumétrica).
         for iy in 0..=n {
-            for iz in 0..=n {
-                // Evitar saturar: solo caras + algunas internas.
-                if iy != 0 && iy != n && iz != 0 && iz != n && (iy + iz) % 2 == 1 {
-                    continue;
-                }
-                let mut linea = Vec::with_capacity((n + 1) as usize);
-                for ix in 0..=n {
-                    let (x, y, z) = nodo(ix, iy, iz);
-                    linea.push(self.proyectar_rel(x, y, z, rect));
-                }
-                painter.add(egui::Shape::line(linea, stroke));
+            for ix in 0..n {
+                let (x0, y0, z0, p0) = nodos[iy as usize][ix as usize];
+                let (x1, y1, z1, p1) = nodos[iy as usize][ix as usize + 1];
+                let a = self.proyectar_rel(x0, y0, z0, rect);
+                let b = self.proyectar_rel(x1, y1, z1, rect);
+                let col = color_prof(0.5 * (p0 + p1));
+                painter.line_segment([a, b], Stroke::new(1.15_f32, col));
             }
         }
         for ix in 0..=n {
-            for iz in 0..=n {
-                if ix != 0 && ix != n && iz != 0 && iz != n && (ix + iz) % 2 == 1 {
-                    continue;
-                }
-                let mut linea = Vec::with_capacity((n + 1) as usize);
-                for iy in 0..=n {
-                    let (x, y, z) = nodo(ix, iy, iz);
-                    linea.push(self.proyectar_rel(x, y, z, rect));
-                }
-                painter.add(egui::Shape::line(linea, stroke));
-            }
-        }
-        for ix in 0..=n {
-            for iy in 0..=n {
-                if ix != 0 && ix != n && iy != 0 && iy != n && (ix + iy) % 2 == 1 {
-                    continue;
-                }
-                let mut linea = Vec::with_capacity((n + 1) as usize);
-                for iz in 0..=n {
-                    let (x, y, z) = nodo(ix, iy, iz);
-                    linea.push(self.proyectar_rel(x, y, z, rect));
-                }
-                painter.add(egui::Shape::line(linea, stroke));
+            for iy in 0..n {
+                let (x0, y0, z0, p0) = nodos[iy as usize][ix as usize];
+                let (x1, y1, z1, p1) = nodos[iy as usize + 1][ix as usize];
+                let a = self.proyectar_rel(x0, y0, z0, rect);
+                let b = self.proyectar_rel(x1, y1, z1, rect);
+                let col = color_prof(0.5 * (p0 + p1));
+                painter.line_segment([a, b], Stroke::new(1.15_f32, col));
             }
         }
 
-        // Ejes del marco local (referencia 3D).
-        let o = self.proyectar_rel(0.0, 0.0, 0.0, rect);
-        let ex = self.proyectar_rel(alcance as f32 * 0.55, 0.0, 0.0, rect);
-        let ey = self.proyectar_rel(0.0, alcance as f32 * 0.55, 0.0, rect);
-        let ez = self.proyectar_rel(0.0, 0.0, alcance as f32 * 0.55, rect);
-        painter.line_segment([o, ex], stroke_eje);
-        painter.line_segment(
-            [o, ey],
-            Stroke::new(1.4_f32, Color32::from_rgba_unmultiplied(79, 209, 197, 100)),
-        );
-        painter.line_segment(
-            [o, ez],
-            Stroke::new(1.4_f32, Color32::from_rgba_unmultiplied(180, 140, 255, 100)),
-        );
+        // Plano de referencia (z=0) muy suave — ancla visual del «tejido».
+        let z0 = 0.0_f32;
+        let corners = [
+            (-alcance as f32, -alcance as f32),
+            (alcance as f32, -alcance as f32),
+            (alcance as f32, alcance as f32),
+            (-alcance as f32, alcance as f32),
+        ];
+        let stroke_ref = Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 28));
+        for i in 0..4 {
+            let (x0, y0) = corners[i];
+            let (x1, y1) = corners[(i + 1) % 4];
+            painter.line_segment(
+                [self.proyectar_rel(x0, y0, z0, rect), self.proyectar_rel(x1, y1, z0, rect)],
+                stroke_ref,
+            );
+        }
     }
 }
