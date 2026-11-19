@@ -1,0 +1,67 @@
+{
+  "id": "orbit_yin_yang",
+  "nombre": "Yin-Yang (III.3.A)",
+  "descripcion": "Coreografía Yin-Yang α: dos lóbulos entrelazados. Muy visual para proyección / presentación en clase.",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "mercurio",
+      "nombre": "A · Mercurio",
+      "masa": 1e+24,
+      "radio": 40000000.0,
+      "posicion": [
+        -1000000000.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        132.77416899650356,
+        78.72752970848333,
+        0.0
+      ]
+    },
+    {
+      "id": "urano",
+      "nombre": "B · Urano",
+      "masa": 1e+24,
+      "radio": 44000000.0,
+      "posicion": [
+        1000000000.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        132.77416899650356,
+        78.72752970848333,
+        0.0
+      ]
+    },
+    {
+      "id": "neptuno",
+      "nombre": "C · Neptuno",
+      "masa": 1e+24,
+      "radio": 40000000.0,
+      "posicion": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        -265.5483379930071,
+        -157.45505941696666,
+        0.0
+      ]
+    }
+  ],
+  "parametros": {
+    "dt": 83844.75328569488,
+    "pasos": 800,
+    "periodo_natural": 17.32881,
+    "ref": "III.3.A.α",
+    "nota": "Escalado SI L=1e9 m, M=1e24 kg, G SI. Fuente: Observable @rreusser / IPB III.3.A.α. G=m=1 en unidades naturales."
+  }
+}

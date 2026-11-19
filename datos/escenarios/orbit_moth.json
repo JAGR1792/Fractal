@@ -1,0 +1,67 @@
+{
+  "id": "orbit_moth",
+  "nombre": "Polilla (IVa.4.A)",
+  "descripcion": "Familia Moth IVa.4.A — período largo, alas simétricas. Catálogo Observable/@rreusser / IPB.",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "tierra",
+      "nombre": "A · Tierra",
+      "masa": 1e+24,
+      "radio": 40000000.0,
+      "posicion": [
+        -1000000000.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        113.45707206223024,
+        117.02277275081474,
+        0.0
+      ]
+    },
+    {
+      "id": "luna",
+      "nombre": "B · Luna",
+      "masa": 1e+24,
+      "radio": 44000000.0,
+      "posicion": [
+        1000000000.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        113.45707206223024,
+        117.02277275081474,
+        0.0
+      ]
+    },
+    {
+      "id": "marte",
+      "nombre": "C · Marte",
+      "masa": 1e+24,
+      "radio": 40000000.0,
+      "posicion": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        -226.91414412446048,
+        -234.04554550162948,
+        0.0
+      ]
+    }
+  ],
+  "parametros": {
+    "dt": 138715.12940387905,
+    "pasos": 800,
+    "periodo_natural": 28.669273,
+    "ref": "IVa.4.A",
+    "nota": "Escalado SI L=1e9 m, M=1e24 kg."
+  }
+}

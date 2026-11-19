@@ -1,9 +1,12 @@
-//! Carga texturas planetarias desde `aplicaciones/web/public/texturas/` si existen.
-//! Fallback: colores procedurales (sin dependencia de ficheros).
+//! Texturas planetarias desde `aplicaciones/web/public/texturas/`.
+//!
+//! Usa los PNG del repo (mapas equirectangulares). Solo cae a procedural si
+//! el fichero falta o no se puede leer.
 
 use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 /// Alias de id de cuerpo → nombre de fichero sin extensión.
 fn alias_textura(id: &str) -> &str {
@@ -13,16 +16,16 @@ fn alias_textura(id: &str) -> &str {
         "sun" | "sol" => "sol",
         "mercury" | "mercurio" => "mercurio",
         "venus" => "venus",
-        "mars" | "marte" => "marte",
-        "jupiter" => "jupiter",
+        "mars" | "marte" | "a" | "cuerpo_a" => "marte",
+        "jupiter" | "b" | "cuerpo_b" => "jupiter",
         "saturn" | "saturno" => "saturno",
         "uranus" | "urano" => "urano",
-        "neptune" | "neptuno" => "neptuno",
+        "neptune" | "neptuno" | "c" | "cuerpo_c" => "neptuno",
         other => other,
     }
 }
 
-/// Directorios candidatos para texturas del web.
+/// Directorios candidatos (crate → cwd).
 pub fn directorios_texturas() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     let desde_crate = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../web/public/texturas");
@@ -81,8 +84,8 @@ pub fn color_planeta(id: &str, indice: usize) -> Color32 {
 
 fn imagen_procedural(id: &str, indice: usize) -> ColorImage {
     let base = color_planeta(id, indice);
-    let w = 64usize;
-    let h = 64usize;
+    let w = 128usize;
+    let h = 128usize;
     let mut pixels = Vec::with_capacity(w * h);
     for y in 0..h {
         for x in 0..w {
@@ -93,7 +96,6 @@ fn imagen_procedural(id: &str, indice: usize) -> ColorImage {
                 pixels.push(Color32::TRANSPARENT);
                 continue;
             }
-            // Sombreado lambertiano simple (luz desde arriba-izquierda).
             let luz = (-0.5 * nx - 0.4 * ny + 0.7).clamp(0.25, 1.0);
             let a = ((1.0 - r2) * 4.0).clamp(0.0, 1.0);
             pixels.push(Color32::from_rgba_unmultiplied(
@@ -107,14 +109,14 @@ fn imagen_procedural(id: &str, indice: usize) -> ColorImage {
     ColorImage { size: [w, h], pixels }
 }
 
-fn cargar_png_rgba(path: &Path) -> Result<ColorImage, String> {
+/// Proyecta un disco esférico muestreando un mapa equirectangular (lon/lat).
+fn cargar_mapa_esfera(path: &Path) -> Result<ColorImage, String> {
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
     let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?.into_rgba8();
-    // Disco sombreado muestreando el mapa (evita quads rectangulares).
     let tw = img.width() as f32;
     let th = img.height() as f32;
-    let w = 64usize;
-    let h = 64usize;
+    let w = 160usize;
+    let h = 160usize;
     let mut pixels = Vec::with_capacity(w * h);
     for y in 0..h {
         for x in 0..w {
@@ -125,11 +127,18 @@ fn cargar_png_rgba(path: &Path) -> Result<ColorImage, String> {
                 pixels.push(Color32::TRANSPARENT);
                 continue;
             }
-            let u = ((nx * 0.5 + 0.5) * (tw - 1.0)).clamp(0.0, tw - 1.0) as u32;
-            let v = ((ny * 0.5 + 0.5) * (th - 1.0)).clamp(0.0, th - 1.0) as u32;
-            let p = img.get_pixel(u, v);
-            let luz = (-0.45 * nx - 0.35 * ny + 0.75).clamp(0.28, 1.0);
-            let a = ((1.0 - r2) * 5.0).clamp(0.0, 1.0);
+            let nz = (1.0 - r2).sqrt();
+            // Equirectangular: u = lon, v = lat.
+            let lon = nx.atan2(nz);
+            let lat = ny.asin();
+            let u = ((lon / (2.0 * std::f32::consts::PI)) + 0.5).rem_euclid(1.0);
+            let v = (0.5 - lat / std::f32::consts::PI).clamp(0.0, 1.0);
+            let px = (u * (tw - 1.0)) as u32;
+            let py = (v * (th - 1.0)) as u32;
+            let p = img.get_pixel(px, py);
+            let luz = (0.35 + 0.75 * (0.55 * nz - 0.25 * nx + 0.35 * (-ny)).clamp(0.0, 1.0))
+                .clamp(0.2, 1.0);
+            let a = ((1.0 - r2) * 6.0).clamp(0.0, 1.0);
             pixels.push(Color32::from_rgba_unmultiplied(
                 (p[0] as f32 * luz) as u8,
                 (p[1] as f32 * luz) as u8,
@@ -139,6 +148,20 @@ fn cargar_png_rgba(path: &Path) -> Result<ColorImage, String> {
         }
     }
     Ok(ColorImage { size: [w, h], pixels })
+}
+
+fn aviso_dirs() {
+    static UNA_VEZ: OnceLock<()> = OnceLock::new();
+    UNA_VEZ.get_or_init(|| {
+        let dirs = directorios_texturas();
+        if dirs.is_empty() {
+            eprintln!(
+                "aviso: no se encontró aplicaciones/web/public/texturas — se usará procedural"
+            );
+        } else {
+            eprintln!("texturas: buscando en {}", dirs[0].display());
+        }
+    });
 }
 
 /// Caché de texturas egui por id de cuerpo.
@@ -152,21 +175,32 @@ impl CatalogoTexturas {
     }
 
     pub fn obtener(&mut self, ctx: &egui::Context, id: &str, indice: usize) -> TextureHandle {
-        if let Some(h) = self.handles.get(id) {
+        aviso_dirs();
+        let clave = alias_textura(id).to_string();
+        if let Some(h) = self.handles.get(&clave) {
             return h.clone();
         }
         let imagen = match buscar_fichero(id) {
-            Some(ruta) => match cargar_png_rgba(&ruta) {
-                Ok(img) => img,
+            Some(ruta) => match cargar_mapa_esfera(&ruta) {
+                Ok(img) => {
+                    eprintln!("textura cargada: {} → {}", id, ruta.display());
+                    img
+                }
                 Err(err) => {
-                    eprintln!("aviso textura {}: {err}", ruta.display());
+                    eprintln!("aviso textura {}: {err} — procedural", ruta.display());
                     imagen_procedural(id, indice)
                 }
             },
-            None => imagen_procedural(id, indice),
+            None => {
+                eprintln!(
+                    "aviso: sin fichero para '{id}' (alias {}) — procedural",
+                    alias_textura(id)
+                );
+                imagen_procedural(id, indice)
+            }
         };
-        let handle = ctx.load_texture(format!("planeta-{id}"), imagen, TextureOptions::LINEAR);
-        self.handles.insert(id.to_string(), handle.clone());
+        let handle = ctx.load_texture(format!("planeta-{clave}"), imagen, TextureOptions::LINEAR);
+        self.handles.insert(clave, handle.clone());
         handle
     }
 }

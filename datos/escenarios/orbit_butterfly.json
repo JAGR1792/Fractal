@@ -1,0 +1,67 @@
+{
+  "id": "orbit_butterfly",
+  "nombre": "Mariposa I (I.2.A)",
+  "descripcion": "Órbita periódica planar «Butterfly I» (Šuvakov & Dmitrašinović 2012). Condiciones del catálogo de Observable/@rreusser. Ideal para presentar la figura que traza la estela.",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "marte",
+      "nombre": "A · Marte",
+      "masa": 1e+24,
+      "radio": 40000000.0,
+      "posicion": [
+        -1000000000.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        79.28478346774119,
+        32.424315050150355,
+        0.0
+      ]
+    },
+    {
+      "id": "jupiter",
+      "nombre": "B · Júpiter",
+      "masa": 1e+24,
+      "radio": 44000000.0,
+      "posicion": [
+        1000000000.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        79.28478346774119,
+        32.424315050150355,
+        0.0
+      ]
+    },
+    {
+      "id": "neptuno",
+      "nombre": "C · Neptuno",
+      "masa": 1e+24,
+      "radio": 40000000.0,
+      "posicion": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        -158.56956693548238,
+        -64.84863010030071,
+        0.0
+      ]
+    }
+  ],
+  "parametros": {
+    "dt": 30166.20597793366,
+    "pasos": 800,
+    "periodo_natural": 6.234671,
+    "ref": "I.2.A",
+    "nota": "Escalado SI L=1e9 m, M=1e24 kg, G SI. Fuente: Observable @rreusser / IPB I.2.A. G=m=1 en unidades naturales."
+  }
+}

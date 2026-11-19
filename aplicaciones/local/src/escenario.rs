@@ -29,6 +29,28 @@ pub struct EscenarioMeta {
     pub ruta: Option<PathBuf>,
 }
 
+/// Una muestra de coreografía periódica (posiciones relativas al origen natural).
+#[derive(Debug, Clone)]
+pub struct MuestraTrayectoria {
+    /// Tiempo natural ∈ [0, T].
+    pub t: f64,
+    /// Posiciones SI de los 3 cuerpos: [(x,y), ...].
+    pub xy: [(f64, f64); 3],
+}
+
+/// Trayectoria de un período (Cash-Karp / Observable) para repetir en bucle.
+///
+/// Las órbitas periódicas planas distintas del figure-8 son inestables: la
+/// integración en vivo diverge; el notebook de Observable tabula un período y
+/// lo repite. Hacemos lo mismo aquí.
+#[derive(Debug, Clone)]
+pub struct TrayectoriaPeriodica {
+    pub periodo_natural: f64,
+    /// Período en segundos SI.
+    pub periodo_si: f64,
+    pub muestras: Vec<MuestraTrayectoria>,
+}
+
 /// Escenario cargado listo para simular.
 #[derive(Debug, Clone)]
 pub struct EscenarioCargado {
@@ -37,6 +59,8 @@ pub struct EscenarioCargado {
     pub cuerpos: Vec<Cuerpo>,
     pub dt: f64,
     pub escala: f64,
+    /// Si hay trayectoria precomputada, la app puede reproducir la figura.
+    pub trayectoria: Option<TrayectoriaPeriodica>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,6 +71,15 @@ struct EscenarioJson {
     cuerpos: Vec<CuerpoJson>,
     #[serde(default)]
     parametros: ParametrosJson,
+}
+
+#[derive(Debug, Deserialize)]
+struct TrayectoriaJson {
+    #[serde(default)]
+    periodo_natural: f64,
+    t: Vec<f64>,
+    /// Cada muestra: [x0, y0, x1, y1, x2, y2] en unidades G=m=1.
+    xy: Vec<Vec<f64>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,54 +113,50 @@ pub fn tres_cuerpos_figure8() -> EscenarioCargado {
     let v3 = Vec3::new(-2.0 * VX1 * vs, -2.0 * VY1 * vs, 0.0);
 
     let cuerpos = vec![
-        Cuerpo::nuevo("a", "A", MASA, RADIO, p1, v1),
-        Cuerpo::nuevo("b", "B", MASA, RADIO, p2, v2),
-        Cuerpo::nuevo("c", "C", MASA, RADIO, p3, v3),
+        Cuerpo::nuevo("marte", "A · Marte", MASA, RADIO, p1, v1),
+        Cuerpo::nuevo("jupiter", "B · Júpiter", MASA, RADIO * 1.15, p2, v2),
+        Cuerpo::nuevo("neptuno", "C · Neptuno", MASA, RADIO, p3, v3),
     ];
     EscenarioCargado {
         id: "tres_cuerpos".into(),
-        nombre: "Figure-8 (periódica)".into(),
+        nombre: "Figure-8 Moore (periódica)".into(),
         dt: dt_recomendado_figure8(),
         escala: escala_desde_cuerpos(&cuerpos).max(ESCALA_L),
         cuerpos,
+        trayectoria: None,
     }
 }
 
-/// Problema pitagórico 3-4-5 con empujón leve — caos claro para demo.
+/// Caos acotado: figure-8 con masas desiguales + perturbación (~2 %).
+///
+/// El pitagórico 3-4-5 clásico eyecta un cuerpo a ~km/s y la cámara “congela”
+/// el resto; aquí el sistema sigue ligado lo bastante como para ver sensibilidad
+/// a condiciones iniciales sin salir disparado en segundos.
 pub fn tres_cuerpos_caos() -> EscenarioCargado {
-    let l = 1.0e9;
+    let vs = escala_velocidad();
+    let m1 = 1.15 * MASA;
+    let m2 = 0.90 * MASA;
+    let m3 = 0.95 * MASA;
+    let p1 = Vec3::new(X1 * ESCALA_L * 1.01, Y1 * ESCALA_L, 0.0);
+    let p2 = Vec3::new(-X1 * ESCALA_L, -Y1 * ESCALA_L * 0.99, 0.0);
+    let p3 = Vec3::new(0.02 * ESCALA_L, 0.01 * ESCALA_L, 0.0);
+    let v1 = Vec3::new(VX1 * vs * 1.02, VY1 * vs * 0.98, 0.0);
+    let v2 = Vec3::new(VX1 * vs * 0.97, VY1 * vs * 1.03, 0.0);
+    let v3 = Vec3::new(-2.0 * VX1 * vs * 1.01, -2.0 * VY1 * vs * 0.99, 0.0);
+
+    // Ids de planeta → texturas reales en `public/texturas/`.
     let cuerpos = vec![
-        Cuerpo::nuevo(
-            "a",
-            "A (3)",
-            3.0e24,
-            5.0e7,
-            Vec3::new(l, 3.0 * l, 0.0),
-            Vec3::new(40.0, -25.0, 0.0),
-        ),
-        Cuerpo::nuevo(
-            "b",
-            "B (4)",
-            4.0e24,
-            5.5e7,
-            Vec3::new(-2.0 * l, -l, 0.0),
-            Vec3::new(-10.0, 55.0, 0.0),
-        ),
-        Cuerpo::nuevo(
-            "c",
-            "C (5)",
-            5.0e24,
-            6.0e7,
-            Vec3::new(l, -l, 0.0),
-            Vec3::new(-15.0, -20.0, 0.0),
-        ),
+        Cuerpo::nuevo("marte", "A · Marte", m1, RADIO * 0.9, p1, v1),
+        Cuerpo::nuevo("jupiter", "B · Júpiter", m2, RADIO * 1.1, p2, v2),
+        Cuerpo::nuevo("neptuno", "C · Neptuno", m3, RADIO, p3, v3),
     ];
     EscenarioCargado {
         id: "tres_cuerpos_caos".into(),
         nombre: "Tres cuerpos (caos)".into(),
-        dt: 800.0,
-        escala: escala_desde_cuerpos(&cuerpos).max(l * 3.0),
+        dt: dt_recomendado_figure8() * 0.5,
+        escala: escala_desde_cuerpos(&cuerpos).max(ESCALA_L),
         cuerpos,
+        trayectoria: None,
     }
 }
 
@@ -188,6 +217,45 @@ pub fn geometria_sistema(cuerpos: &[Cuerpo]) -> (Vec3, f64) {
     (centro, max_r.max(1.0))
 }
 
+/// Encuadre robusto: ignora eyecciones lejanas para que la cámara no “congele”.
+///
+/// Devuelve `(centro_local, span, indices_escapados)`.
+pub fn geometria_robusta(cuerpos: &[Cuerpo]) -> (Vec3, f64, Vec<usize>) {
+    if cuerpos.is_empty() {
+        return (Vec3::cero(), 1.0, Vec::new());
+    }
+    let cm = baricentro(cuerpos);
+    let mut radios: Vec<(usize, f64)> = cuerpos
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let dx = c.posicion.x - cm.x;
+            let dy = c.posicion.y - cm.y;
+            let dz = c.posicion.z - cm.z;
+            (i, (dx * dx + dy * dy + dz * dz).sqrt())
+        })
+        .collect();
+    radios.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    let med = radios[radios.len() / 2].1.max(1.0);
+    let umbral = (med * 4.5).max(med + 1.0);
+    let mut escapados = Vec::new();
+    let mut nucleos = Vec::new();
+    for &(i, r) in &radios {
+        if r > umbral && cuerpos.len() >= 3 {
+            escapados.push(i);
+        } else {
+            nucleos.push(i);
+        }
+    }
+    if nucleos.is_empty() {
+        nucleos = (0..cuerpos.len()).collect();
+        escapados.clear();
+    }
+    let sub: Vec<Cuerpo> = nucleos.iter().map(|&i| cuerpos[i].clone()).collect();
+    let (centro, span) = geometria_sistema(&sub);
+    (centro, span.max(med * 1.2), escapados)
+}
+
 /// Directorio `datos/escenarios` relativo al crate o al cwd.
 pub fn directorio_escenarios() -> PathBuf {
     let desde_crate = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../datos/escenarios");
@@ -221,6 +289,11 @@ pub fn listar_escenarios() -> Vec<EscenarioMeta> {
         rutas.sort();
 
         for ruta in rutas {
+            let nombre = ruta.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            // Las trayectorias precomputadas van junto a los escenarios, no son escenarios.
+            if nombre.contains(".trayectoria.") {
+                continue;
+            }
             match cargar_json(&ruta) {
                 Ok(esc) => {
                     metas.push(EscenarioMeta { id: esc.id, nombre: esc.nombre, ruta: Some(ruta) });
@@ -232,16 +305,23 @@ pub fn listar_escenarios() -> Vec<EscenarioMeta> {
         }
     }
 
-    asegurar_embebido(&mut metas, "tres_cuerpos", "Figure-8 (periódica)");
+    asegurar_embebido(&mut metas, "tres_cuerpos", "Figure-8 Moore (periódica)");
     asegurar_embebido(&mut metas, "tres_cuerpos_caos", "Tres cuerpos (caos)");
 
     metas.sort_by(|a, b| {
         let rank = |id: &str| match id {
-            "tres_cuerpos_caos" => 0,
-            "tres_cuerpos" => 1,
-            "dos_cuerpos" => 2,
-            "sistema_solar" => 3,
-            _ => 10,
+            "tres_cuerpos" => 0,
+            "orbit_figure8_ipb" => 1,
+            "orbit_butterfly" => 2,
+            "orbit_dragonfly" => 3,
+            "orbit_yin_yang" => 4,
+            "orbit_yarn" => 5,
+            "orbit_moth" => 6,
+            "orbit_broucke" => 7,
+            "tres_cuerpos_caos" => 8,
+            "dos_cuerpos" => 9,
+            "sistema_solar" => 10,
+            _ => 20,
         };
         rank(&a.id).cmp(&rank(&b.id)).then_with(|| a.nombre.cmp(&b.nombre))
     });
@@ -260,6 +340,83 @@ pub fn cargar_por_id(id: &str, catalogo: &[EscenarioMeta]) -> Result<EscenarioCa
         "tres_cuerpos" => Ok(tres_cuerpos_figure8()),
         "tres_cuerpos_caos" => Ok(tres_cuerpos_caos()),
         _ => Err(format!("escenario desconocido: {id}")),
+    }
+}
+
+/// Carga trayectoria precomputada (unidades naturales G=m=1 → SI).
+pub fn cargar_trayectoria(ruta: &Path) -> Result<TrayectoriaPeriodica, String> {
+    let texto = fs::read_to_string(ruta).map_err(|e| format!("lectura {}: {e}", ruta.display()))?;
+    let raw: TrayectoriaJson = serde_json::from_str(&texto)
+        .map_err(|e| format!("JSON trayectoria {}: {e}", ruta.display()))?;
+    if raw.t.is_empty() || raw.xy.len() != raw.t.len() {
+        return Err(format!("{} trayectoria vacía o t/xy desalineados", ruta.display()));
+    }
+    let t_fin = *raw.t.last().unwrap_or(&raw.periodo_natural);
+    let periodo_natural = if raw.periodo_natural > 0.0 { raw.periodo_natural } else { t_fin };
+    let tau = (ESCALA_L * ESCALA_L * ESCALA_L / (G * MASA)).sqrt();
+    let mut muestras = Vec::with_capacity(raw.t.len());
+    for (t, fila) in raw.t.iter().zip(raw.xy.iter()) {
+        if fila.len() < 6 {
+            return Err(format!("{} muestra con <6 coords", ruta.display()));
+        }
+        muestras.push(MuestraTrayectoria {
+            t: *t,
+            xy: [
+                (fila[0] * ESCALA_L, fila[1] * ESCALA_L),
+                (fila[2] * ESCALA_L, fila[3] * ESCALA_L),
+                (fila[4] * ESCALA_L, fila[5] * ESCALA_L),
+            ],
+        });
+    }
+    Ok(TrayectoriaPeriodica { periodo_natural, periodo_si: periodo_natural * tau, muestras })
+}
+
+fn trayectoria_junto_a(ruta_escenario: &Path) -> Option<PathBuf> {
+    let stem = ruta_escenario.file_stem()?.to_str()?;
+    let dir = ruta_escenario.parent()?;
+    let cand = dir.join(format!("{stem}.trayectoria.json"));
+    if cand.is_file() { Some(cand) } else { None }
+}
+
+/// Interpola posiciones (y velocidades aproximadas) en la fase φ ∈ [0, 1).
+pub fn muestrear_trayectoria(tray: &TrayectoriaPeriodica, fase: f64, cuerpos: &mut [Cuerpo]) {
+    if tray.muestras.len() < 2 || cuerpos.is_empty() {
+        return;
+    }
+    let fase = fase.rem_euclid(1.0);
+    let t = fase * tray.periodo_natural;
+    let n = tray.muestras.len();
+    let mut i1 = 0usize;
+    while i1 + 1 < n && tray.muestras[i1 + 1].t < t {
+        i1 += 1;
+    }
+    let i2 = (i1 + 1) % n;
+    let a = &tray.muestras[i1];
+    let b = &tray.muestras[i2];
+    let dt = if i2 > i1 {
+        (b.t - a.t).max(1e-12)
+    } else {
+        (tray.periodo_natural - a.t + b.t).max(1e-12)
+    };
+    let u = if i2 > i1 {
+        ((t - a.t) / dt).clamp(0.0, 1.0)
+    } else {
+        // wrap al final del período
+        let t_lin = if t >= a.t { t - a.t } else { tray.periodo_natural - a.t + t };
+        (t_lin / dt).clamp(0.0, 1.0)
+    };
+    let tau = tray.periodo_si / tray.periodo_natural.max(1e-12);
+    let n_c = cuerpos.len().min(3);
+    for i in 0..n_c {
+        let (x0, y0) = a.xy[i];
+        let (x1, y1) = b.xy[i];
+        let x = x0 + (x1 - x0) * u;
+        let y = y0 + (y1 - y0) * u;
+        // v ≈ Δx / Δt_si
+        let vx = (x1 - x0) / (dt * tau);
+        let vy = (y1 - y0) / (dt * tau);
+        cuerpos[i].posicion = Vec3::new(x, y, 0.0);
+        cuerpos[i].velocidad = Vec3::new(vx, vy, 0.0);
     }
 }
 
@@ -294,7 +451,15 @@ pub fn cargar_json(ruta: &Path) -> Result<EscenarioCargado, String> {
         tau / 400.0
     });
 
-    Ok(EscenarioCargado { id: raw.id, nombre: raw.nombre, cuerpos, dt, escala })
+    let trayectoria = trayectoria_junto_a(ruta).and_then(|p| match cargar_trayectoria(&p) {
+        Ok(t) => Some(t),
+        Err(err) => {
+            eprintln!("aviso: trayectoria {}: {err}", p.display());
+            None
+        }
+    });
+
+    Ok(EscenarioCargado { id: raw.id, nombre: raw.nombre, cuerpos, dt, escala, trayectoria })
 }
 
 #[cfg(test)]
@@ -340,5 +505,29 @@ mod tests {
             assert_eq!(e.id, "tres_cuerpos_caos");
             assert_eq!(e.cuerpos.len(), 3);
         }
+    }
+
+    #[test]
+    fn orbitas_periodicas_tienen_trayectoria() {
+        let dir = directorio_escenarios();
+        let butterfly = dir.join("orbit_butterfly.json");
+        if !butterfly.is_file() {
+            return;
+        }
+        let e = cargar_json(&butterfly).expect("orbit_butterfly");
+        let tray = e.trayectoria.expect("trayectoria butterfly");
+        assert!(tray.muestras.len() > 10);
+        assert!(tray.periodo_si > 0.0);
+        let mut cuerpos = e.cuerpos;
+        muestrear_trayectoria(&tray, 0.25, &mut cuerpos);
+        let (_, span) = geometria_sistema(&cuerpos);
+        assert!(span > ESCALA_L * 0.1);
+        assert!(span < ESCALA_L * 5.0);
+    }
+
+    #[test]
+    fn catalogo_ignora_ficheros_trayectoria() {
+        let metas = listar_escenarios();
+        assert!(metas.iter().all(|m| !m.id.contains("trayectoria")));
     }
 }

@@ -1,0 +1,67 @@
+{
+  "id": "orbit_figure8_ipb",
+  "nombre": "Figure-8 IPB (V.1.A)",
+  "descripcion": "Figure-8 del catálogo IPB (fase colineal), distinta del Moore/Chenciner–Montgomery. Misma familia coreográfica, otra fase inicial.",
+  "unidades": {
+    "masa": "kg",
+    "distancia": "m",
+    "tiempo": "s"
+  },
+  "cuerpos": [
+    {
+      "id": "marte",
+      "nombre": "A · Marte",
+      "masa": 1e+24,
+      "radio": 40000000.0,
+      "posicion": [
+        -1000000000.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        89.67548638723609,
+        137.62824451003885,
+        0.0
+      ]
+    },
+    {
+      "id": "jupiter",
+      "nombre": "B · Júpiter",
+      "masa": 1e+24,
+      "radio": 44000000.0,
+      "posicion": [
+        1000000000.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        89.67548638723609,
+        137.62824451003885,
+        0.0
+      ]
+    },
+    {
+      "id": "neptuno",
+      "nombre": "C · Neptuno",
+      "masa": 1e+24,
+      "radio": 40000000.0,
+      "posicion": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "velocidad": [
+        -179.35097277447218,
+        -275.2564890200777,
+        0.0
+      ]
+    }
+  ],
+  "parametros": {
+    "dt": 30607.599325961648,
+    "pasos": 800,
+    "periodo_natural": 6.325897,
+    "ref": "V.1.A",
+    "nota": "Escalado SI L=1e9 m, M=1e24 kg, G SI. Fuente: Observable @rreusser / IPB V.1.A. G=m=1 en unidades naturales."
+  }
+}
